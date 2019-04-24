@@ -1,0 +1,27 @@
+{
+      "read_len" : {
+            "F0_VRG_4-8h_rep1"     : 186,
+            "F0_VRG_4-8h_rep2"     : 186,
+            "F0_VRG_heads_rep1"    : 186,
+            "F0_VRG_heads_rep2"    : 186,
+            "F1_CyOTM3_heads_rep1" : 186,
+            "F1_CyOTM3_heads_rep2" : 186,
+            "N1_CyO_heads_rep1"    : 186,
+            "N1_CyO_heads_rep2"    : 186,
+            "N1_TM3_heads_rep1"    : 186,
+            "N1_TM3_heads_rep2"    : 186,
+            "N1_pool_4-8h_rep1"    : 188,
+            "N1_pool_4-8h_rep2"    : 188,
+            "N1_pool_6-8h_rep1"    : 288,
+            "N1_pool_6-8h_rep2"    : 288,
+            "N1_pool_heads_rep1"   : 186,
+            "N1_pool_heads_rep2"   : 186,
+            "N1sex_pool_6-8h_rep1" : 288,
+            "N1sex_pool_6-8h_rep2" : 288,
+            "F1_CyOTM3_headsFemale_rep1" : 302, 
+            "F1_CyOTM3_headsFemale_rep2" : 302,
+            "F1_CyOTM3_headsFemale_rep3" : 302,
+            "F1_CyOTM3_headsFemale_rep4" : 302
+      },
+      "gff" : "/g/korbel/shared/projects/drosophila_balancer/analyses/SNV_annotation/reformatted.gff"
+}

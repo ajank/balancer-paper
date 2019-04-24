@@ -1,0 +1,301 @@
+---
+title: "Correlations of ASE genes with certain features"
+author: "Sascha Meiers"
+date: "Sep 23, 2016"
+---
+
+> Compile with `rm dump.*.Rdata && Rscript -e 'rmarkdown::render("ase_genes_around_bp.Rmd", clean=F, output_format="all");'`
+
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+source("common.R")
+```
+
+# Input data
+
+The following variables are read by `common.R`:
+
+  * `ASE.adult`, `ASE.embryo`
+  * `EXONS`
+  * `GENE_SPAN`
+
+### Read breakpoints
+
+```{r}
+BAL_SEG <- fread("../../SV_validation/hiC_SVs/alek.hiC_breakpoints.final.txt")
+BAL_SEG <- BAL_SEG[, c(1,4,6,7), with=F]
+colnames(BAL_SEG) = c("seqnames", "bp1", "bp2", "col")
+BAL_BREAK <- data.table(seqnames = rep(BAL_SEG$seqnames,2),
+                        x = c(BAL_SEG$bp1, BAL_SEG$bp2)) %>%
+  filter(x!=1, !(x %in% seqlengths(EXONS))) %>%     
+  arrange(seqnames, x) %>%
+  as.data.table
+BAL_BREAK <- BAL_BREAK[seq(1,nrow(BAL_BREAK),2),] # chose left coordinate
+```
+
+
+
+# Gene density across the genome
+
+```{r}
+# Get binned average (funciton form the net)
+binnedAverage <- function(bins, numvar, mcolname)
+{
+    stopifnot(is(bins, "GRanges"))
+    stopifnot(is(numvar, "RleList"))
+    stopifnot(identical(seqlevels(bins), names(numvar)))
+    bins_per_chrom <- split(ranges(bins), seqnames(bins))
+    means_list <- lapply(names(numvar),
+                        function(seqname) {
+                            views <- Views(numvar[[seqname]],
+                                           bins_per_chrom[[seqname]])
+                            viewMeans(views) })
+    new_mcol <- unsplit(means_list, as.factor(seqnames(bins)))
+    mcols(bins)[[mcolname]] <- new_mcol
+    bins
+}
+bins <- tileGenome(seqlengths(EXONS), tilewidth=10000,
+                   cut.last.tile.in.chrom=TRUE)
+cov <- coverage(EXONS)
+binnedCov <- binnedAverage(bins, cov, "mean_cvg")
+```
+
+I manually kick out the centromers:
+
+```{r}
+manual = GRanges(c("chr2L",     "chr2R",        "chr3L",        "chr3R"),
+        IRanges(c(1000,         5e6,            1000,           4.2e6),
+                c(23513712-5e5, 25286936 - 1e3, 28110227-5.3e6, 32079331 - 1e3)))
+```
+
+Then I can plot again, including the breakpoints:
+
+```{r gene_density, fig.width=8, fig.height=6, dev=c('png','pdf')}
+ggplot(as.data.table(binnedCov)) + aes(x = start, y=mean_cvg) + 
+    geom_point(alpha=1/3) + facet_grid(seqnames ~ .) + 
+    geom_vline(data = as.data.table(manual), aes(xintercept = start, linetype="dashed"), col="darkorange", linetype="dashed")  + 
+    geom_vline(data = as.data.table(manual), aes(xintercept = end, linetype="dashed"), col="darkorange", linetype="dashed") +
+    geom_vline(data = BAL_BREAK, aes(xintercept = x), col="dodgerblue")
+```
+
+
+# Gene counts around breakpoints
+
+Remove the genes that are affected by a breakpoint:
+
+```{r}
+REMOVE_GENES = c( "GlyP"    = "FBgn0004507",
+                  "nAChRa6" = "FBgn0032151",
+                  "Src42A"  = "FBgn0264959",
+                  "Prosap"  = "FBgn0040752",
+                  "FucTA"   = "FBgn0036485",
+                  "CG32206" = "FBgn0052206",
+                  "CG14459" = "FBgn0037171",
+                  "Glut4EF" = "FBgn0267336",
+                  "Lrrk"    = "FBgn0038816",
+                  "p53"     = "FBgn0039044",
+                  "kek6"    = "FBgn0039862",
+				  "CG4360"  = "FBgn0038787")
+GENE_SPAN_EDIT <- GENE_SPAN[!(GENE_SPAN$gene_id %in% REMOVE_GENES),]
+```
+
+
+# Plot across distance
+
+Change the following points:
+
+ * ~~randomly sample 15 breakpoints, take their mean/sum, repeat 1000 times~~
+    * Instead, just take 500 values like in analysis above
+ * more resolution in small scale
+ * use gene_span for the overlap (important at small scale) without removing genes at breakpoints
+
+
+Prepare ranges around Breakpoints.
+```{r}
+#2**c(10:23)
+sizes = 2**c(10:23) #c(1, 100, 1e3, 5e3, 1e4, 3e4, 1e5, 1.5e5, 2e5, 2.5e5, 3e5, 4e5, 5e5, 6e5, 7e5, 8e5, 1e6, 1.5e6, 2e6, 3e6, 4e6, 5e6)
+bal_gr <- GRanges(BAL_BREAK$seqnames, IRanges(BAL_BREAK$x, BAL_BREAK$x), seqinfo = genomeInfo)
+```
+
+## Around breakpoints
+
+> Note: Genes directly hit by the breakpoint are removed!
+
+Get genes (and ASE genes) in regions around breakpoints.
+```{r}
+test_genes_file = "dump.test_genes.Rdata"
+if (file.exists(test_genes_file)) {
+    message("Loading ", test_genes_file)
+    load(test_genes_file, verbose = T)
+} else {
+    message("Calculating genes around breakpoints and writing to ", test_genes_file)
+    test_regions <- bal_gr
+    test_regions$wide = 1
+    for (w in sizes[2:length(sizes)]) {
+        gr <- trim(suppressWarnings(bal_gr + w))
+        gr$wide = w
+        test_regions <- c(test_regions, gr)
+    }
+    test_genes <- as.data.table(get_genes_in_region(GENE_SPAN_EDIT, test_regions))
+    test_genes <- test_genes[, c("start", "end") :=                    # Overwrite with original positions!
+                               .(rep(start(bal_gr), length(sizes)),
+                                 rep(end(bal_gr),   length(sizes)))][]
+    test_genes <- test_genes[, c("r_ase.em", "r_ase.ad") :=
+                              .(ifelse(n_tested.em > 0, n_ase.em / n_tested.em, 0),
+                                ifelse(n_tested.ad > 0, n_ase.ad / n_tested.ad, 0) )][]
+    save(test_genes, file = test_genes_file)
+}
+```
+
+Melt variables `n_ase`, `n_tested`, and `r_ase`.
+```{r}
+test_melt <- melt.data.table(test_genes[n_tested.em > 0,],
+                      c("seqnames", "start", "wide"),
+                      c(paste0(c("n_ase","n_tested"), ".ad"), paste0(c("n_ase","n_tested"), ".em"), "r_ase.ad", "r_ase.em"))
+test_melt.mean = group_by(test_genes, wide) %>%
+  summarise_each(funs(mean), starts_with("n_")) %>%
+  as.data.table %>%
+  melt.data.table("wide", c(paste0(c("n_ase","n_tested"), ".ad"), paste0(c("n_ase","n_tested"), ".em")))
+```
+
+## Background:
+
+Get genes around 500 randomly selected positions
+
+```{r}
+bg_genes_file = "dump.bg_genes.Rdata"
+if (file.exists(bg_genes_file)) {
+    message("Loading ", bg_genes_file)
+    load(bg_genes_file, verbose = T)
+} else {
+    message("Calculating genes around random points and writing ", bg_genes_file)
+    # Select 500 random points.
+    bg_gr <- get_random_breakpoints(500, manual)
+    bg_regions <- bg_gr
+    bg_regions$wide = 1
+    for (w in sizes[2:length(sizes)]) {
+        gr <- trim(suppressWarnings(bg_gr + w))
+        gr$wide = w
+        bg_regions <- c(bg_regions, gr)
+    }
+
+    # Find genes in the background regions (`get_genes_in_region`)
+    bg_genes <- as.data.table(get_genes_in_region(GENE_SPAN_EDIT, bg_regions))
+    bg_genes <- bg_genes[, c("start", "end") :=                    # Overwrite with original positions!
+                               .(rep(start(bg_gr), length(sizes)),
+                                 rep(end(bg_gr),   length(sizes)))][]
+    bg_genes <- bg_genes[, c("r_ase.em", "r_ase.ad") :=
+                           .(ifelse(n_tested.em > 0, n_ase.em / n_tested.em, 0),
+                             ifelse(n_tested.ad > 0, n_ase.ad / n_tested.ad, 0))][]
+    save(bg_genes, file = bg_genes_file)
+}
+```
+
+Melt `bg_genes` variables (`n_ase`, `n_tested`, and `r_ase`)
+```{r}
+q0 = function(x) quantile(x,0.025) # inner 95%
+q1 = function(x) quantile(x,0.05) # inner 90%
+q2 = function(x) quantile(x,0.25) # inner 50%
+q3 = function(x) quantile(x,0.75) # inner 50%
+q4 = function(x) quantile(x,0.95) # inner 90%
+q5 = function(x) quantile(x,0.975) # inner 95%
+bg_melt <- melt.data.table(bg_genes, "wide", c(paste0(c("n_ase","n_tested"), ".ad"), paste0(c("n_ase","n_tested"), ".em"), "r_ase.ad", "r_ase.em"))
+ bg_melt <- bg_melt %>% group_by(wide, variable) %>% summarize_each(funs(q0,q1,q2,q3,q4,q5,mean))
+```
+
+## Plot data
+
+```{r variable_overview, fig.width=8, fig.height=8, dev=c('png','pdf')}
+# plot traditionally
+ggplot(bg_melt) +
+  geom_ribbon(aes(wide, ymin = q1, ymax = q4), alpha=0.1) +
+  geom_ribbon(aes(wide, ymin = q2, ymax = q3), alpha=0.15) +
+  geom_line(data = test_melt, aes(wide, value, col = paste(seqnames, start)), size=1, alpha=0.6) +
+  geom_line(data = test_melt.mean, aes(wide, value, col = paste(seqnames, start)), size=1, col="black") +
+  facet_wrap(~variable, scales="free") + 
+  scale_colour_discrete(name = "Breakpoint") +
+  scale_x_continuous(labels = comma) +
+  xlab("window size") +
+  ylab("number of genes") +
+  #scale_x_log10(labels = comma) +
+  theme_bw() + 
+  theme(legend.position = "bottom") +
+  ggtitle(paste0("#ASE genes around breakpoints vs. random background (n=",(bg_genes[, .N, by = wide]$N[1]),")"))
+
+```
+
+The black line is the mean of all breakpoints. Now again with focus on small sizes: 
+
+```{r variable_overview_log, fig.width=8, fig.height=8, dev=c('png','pdf')}
+ggplot(bg_melt) +
+  geom_ribbon(aes(wide, ymin = q1, ymax = q4), alpha=0.1) +
+  geom_ribbon(aes(wide, ymin = q2, ymax = q3), alpha=0.15) +
+  geom_line(data = test_melt, aes(wide, value, col=paste(seqnames, start)), size=0.5) +
+  geom_line(data = test_melt.mean, aes(wide, value, col=paste(seqnames, start)), size=1, col="black") +
+  facet_wrap(~variable, scales="free") + 
+  scale_colour_discrete(name = "Breakpoint") +
+  #scale_x_continuous(labels = comma) +
+  xlab("window size") +
+  ylab("number of genes") +
+  scale_x_log10(labels = comma) +
+  theme_bw() + 
+  theme(legend.position = "bottom") +
+  ggtitle(paste0("#ASE genes around breakpoints vs. random background (n=",(bg_genes[, .N, by = wide]$N[1]),")"))
+```
+
+
+## Focus only on `r_ase`
+
+```{r r_ase_vs_window_size_new, fig.width=9, fig.height=6, dev=c('png','pdf')}
+bg_ratio = as.data.table(bg_melt)[variable == "r_ase.em",]
+test_ratio = as.data.table(test_melt)[variable == "r_ase.em",]
+ggplot(bg_ratio[wide >= 2000,]) +
+  geom_ribbon(aes(wide, ymin = q0, ymax = q5, fill = "95% inner quantile")) +
+  geom_ribbon(aes(wide, ymin = q1, ymax = q4, fill = "90% inner quantile")) +
+  geom_ribbon(aes(wide, ymin = q2, ymax = q3, fill = "50% inner quantile")) +
+  scale_fill_manual(values = c(`95% inner quantile` = "#eeeeee",
+                               `90% inner quantile` = "#dddddd",
+                               `50% inner quantile` = "#bebebe"),
+                    name = "Expectation") +
+  geom_line(data = test_ratio[wide >= 2000,], size=1, alpha=0.6,
+            aes(wide, value, col = paste0(seqnames, ": ", round(start/1e6,2), " Mb"))) +
+  scale_colour_discrete(name = "Breakpoint") +
+  scale_x_log10(breaks = c(10e3, 100e3,1e6,8e6), labels = c("10kb", "100kb","1Mb","8Mb")) +
+  scale_y_continuous(breaks = seq(0,1,0.1), labels = percent) +
+  coord_cartesian(ylim = c(0,1)) +
+  xlab("Window size around breakpoint (random point, respectively)") +
+  ylab("Fraction of ASE genes among expressed genes") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  ggtitle(paste0("ASE genes around breakpoints (random control, n=",(bg_genes[, .N, by = wide]$N[1]),")"))
+```
+
+
+```{r r_ase_vs_n_tested, fig.width=8, fig.height=8, dev=c('png','pdf')}
+bg_genes$n_tested.em_size_range = floor(log2(bg_genes$n_tested.em))+0.5
+bg_ribbon = bg_genes[, .(q0 = q0(n_ase.em),
+                         q1 = q1(n_ase.em),
+                         q2 = q2(n_ase.em),
+                         q3 = q3(n_ase.em),
+                         q4 = q4(n_ase.em),
+                         q5 = q5(n_ase.em),
+                         n  = .N),
+                     by = n_tested.em_size_range]
+ggplot(bg_ribbon) +
+  geom_ribbon(aes(x = 2**n_tested.em_size_range, ymin = q0, ymax = q5, fill = '95% inner quantile')) +
+  geom_ribbon(aes(x = 2**n_tested.em_size_range, ymin = q1, ymax = q4, fill = '90% inner quantile')) +
+  geom_ribbon(aes(x = 2**n_tested.em_size_range, ymin = q2, ymax = q3, fill = '50% inner quantile')) +
+  geom_line(data = test_genes, size = 1,
+            aes(n_tested.em, n_ase.em, col = paste0(seqnames, ": ", round(start/1e6,2), " Mb"))) +
+  scale_fill_manual(values = c(`95% inner quantile` = "#eeeeee",
+                               `90% inner quantile` = "#dddddd",
+                               `50% inner quantile` = "#bebebe"),
+                    name = "Expectation") +
+  scale_colour_discrete(name = "Breakpoint") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,100), ylim = c(0,20)) +
+  xlab("Number of expressed genes") +
+  ylab("Number of DE genes") +
+  theme(legend.position = "right") +
+  ggtitle(paste0("ASE genes around breakpoints (random control, n=",(bg_genes[, .N, by = wide]$N[1]),")"))
+```

@@ -1,0 +1,28 @@
+{
+	"gff"      : "/g/korbel/shared/projects/drosophila_balancer/data/dm6_annotation/dmel-all-filtered-r6.05.UCSC_names.genes.gff3",
+	"star_idx" : "/g/korbel/shared/datasets/refgenomes/fly/dm6.fa.STAR-index",
+	"PU": {
+		"F0_VRG_4-8h_rep1"		: "C88LWACXX_Heads_2_15s015592-1-1_Ghavi-helm_lane415s015592",
+		"F0_VRG_4-8h_rep2"		: "C88LWACXX_Heads_2_15s015592-1-1_Ghavi-helm_lane415s015592",
+		"F0_VRG_heads_rep1"		: "C840RACXX_Heads_1_15s015373-1-1_Ghavi-helm_lane615s015373",
+		"F0_VRG_heads_rep2"		: "C840RACXX_Heads_1_15s015373-1-1_Ghavi-helm_lane615s015373",
+		"F1_CyOTM3_heads_rep1"	: "C840RACXX_Heads_1_15s015373-1-1_Ghavi-helm_lane615s015373",
+		"F1_CyOTM3_heads_rep2"	: "C840RACXX_Heads_1_15s015373-1-1_Ghavi-helm_lane615s015373",
+		"N1_CyO_heads_rep1"		: "C88LWACXX_Heads_3_15s015593-1-1_Ghavi-helm_lane515s015593",
+		"N1_CyO_heads_rep2"		: "C88LWACXX_Heads_3_15s015593-1-1_Ghavi-helm_lane515s015593",
+		"N1_TM3_heads_rep1"		: "C88LWACXX_Heads_3_15s015593-1-1_Ghavi-helm_lane515s015593",
+		"N1_TM3_heads_rep2"		: "C88LWACXX_Heads_3_15s015593-1-1_Ghavi-helm_lane515s015593",
+		"N1_pool_4-8h_rep1"		: "cisRegVar_vgn_68h_rep1_RNA_LIB20531_RBA19868",
+		"N1_pool_4-8h_rep2"		: "cisRegVar_vgn_68h_rep1_RNA_LIB20531_RBA19868",
+		"N1_pool_heads_rep1"	: "C88LWACXX_Heads_2_15s015592-1-1_Ghavi-helm_lane415s015592",
+		"N1_pool_heads_rep2"	: "C88LWACXX_Heads_2_15s015592-1-1_Ghavi-helm_lane415s015592",
+		"N1_pool_6-8h_rep1"     : "HTFMVBGXX_RNA_CROSS_NEW_16s002675-1-1_Ghavi-helm_lane116s002675",
+		"N1_pool_6-8h_rep2"     : "HTFMVBGXX_RNA_CROSS_NEW_16s002675-1-1_Ghavi-helm_lane116s002675",
+		"N1sex_pool_6-8h_rep1"  : "HTFMVBGXX_RNA_CROSS_NEW_16s002675-1-1_Ghavi-helm_lane116s002675",
+		"N1sex_pool_6-8h_rep2"  : "HTFMVBGXX_RNA_CROSS_NEW_16s002675-1-1_Ghavi-helm_lane116s002675",
+		"F1_CyOTM3_headsFemale_rep1" : "HHKFFAFXX_RNA_heads_CyOTM3_17s001028-1-1_Ghavi-helm_lane117s001028",
+		"F1_CyOTM3_headsFemale_rep2" : "HHKFFAFXX_RNA_heads_CyOTM3_17s001028-1-1_Ghavi-helm_lane117s001028",
+		"F1_CyOTM3_headsFemale_rep3" : "HHKFFAFXX_RNA_heads_CyOTM3_17s001028-1-1_Ghavi-helm_lane117s001028",
+		"F1_CyOTM3_headsFemale_rep4" : "HHKFFAFXX_RNA_heads_CyOTM3_17s001028-1-1_Ghavi-helm_lane117s001028"
+	}
+}

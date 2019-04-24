@@ -1,0 +1,68 @@
+from subprocess import call
+
+LOCI, = glob_wildcards("loci/{gene}.txt")
+BAM   = "/g/korbel/shared/projects/drosophila_balancer/data/mapping/wgs/CROSS.sort.rmdup.merge.bam"
+FETCH = "/g/korbel/shared/projects/drosophila_balancer/analyses/hts_tk/build/hts_fetch"
+DM6   = "/g/korbel/shared/datasets/refgenomes/fly/dm6.fa"
+
+
+rule all:
+    input:      expand("analysis/{gene}/scaffold_vs_{target}.pdf", gene=LOCI, target=["te", "ref"])
+
+rule hts_fetch:
+    input:      "loci/{gene}.txt"
+    output:     "analysis/{gene}/reads.bam"
+    shell:      "cat {input} | xargs " + FETCH + " -o {output} " + BAM
+
+rule name_sort:
+    input:      "analysis/{gene}/reads.bam"
+    output:     "analysis/{gene}/reads.ns.bam"
+    shell:      "samtools-1.2 sort -n {input} analysis/{wildcards.gene}/reads.ns"
+
+rule bam2fasta:
+    input:      "analysis/{gene}/reads.ns.bam"
+    output:     "analysis/{gene}/reads.1.fq",
+                "analysis/{gene}/reads.2.fq"
+    shell:      "samtools view -h {input} | bam2fastx -q -s -A -o analysis/{wildcards.gene}/reads.fq -P -"
+
+rule spades:
+    input:      r1 = "analysis/{gene}/reads.1.fq",
+                r2 = "analysis/{gene}/reads.2.fq"
+    output:     "analysis/{gene}/spades/scaffolds.fasta"
+    shell:      "/g/solexa/home/build.big-al/SPAdes-3.5.0-Linux/bin/spades.py "
+                "-1 {input.r1} -2 {input.r2} -o analysis/{wildcards.gene}/spades"
+
+rule get_ref:
+    input:      "loci/{gene}.txt"
+    output:     "analysis/{gene}/ref.fa"
+    run: 
+                reg = open(input[0]).read()
+                s  = reg.split(":")
+                s2 = s[1].split("-")
+                new_reg = s[0] + ":" + str(int(s2[0])-1000) + "-" + str(int(s2[1])+1000)
+                call(["samtools", "faidx", DM6, new_reg], stdout=open(output[0], 'w'))
+
+rule fastadot:
+    input:      ref = "analysis/{gene}/ref.fa",
+                alt = "analysis/{gene}/spades/scaffolds.fasta"
+    output:     "analysis/{gene}/scaffold_vs_ref.pdf"
+    shell:      "fastadot.py -o {output} {input.ref} {input.alt}"
+
+rule last_align:
+    input:      db = "TE/te.fa",
+                qu = "analysis/{gene}/spades/scaffolds.fasta"
+    output:     "analysis/{gene}/te_hits.txt"
+    shell:      "lastal {input.db} {input.qu} > {output}"
+
+rule get_hits:
+    input:      "analysis/{gene}/te_hits.txt"
+    output:     "analysis/{gene}/te_hits.fa"
+    shell:      "grep -Po '^s gb\|\S+' {input} "
+                "| awk '{{print $2}}' | sort | uniq | "
+                "seqtk subseq -l50 TE/te.fa - > {output}"
+
+rule fastadot2:
+    input:      te = "analysis/{gene}/te_hits.fa",
+                cntg = "analysis/{gene}/spades/scaffolds.fasta"
+    output:     "analysis/{gene}/scaffold_vs_te.pdf"
+    shell:      "fastadot.py -o {output} {input.te} {input.cntg}"

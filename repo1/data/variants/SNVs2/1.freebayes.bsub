@@ -1,0 +1,35 @@
+#!/bin/bash
+
+#BSUB -R "rusage[mem=8000]"
+#BSUB -M 8000
+#BSUB -J freebayes;vt[1-6]
+
+types=(dummy chr2L chr2R chr3L chr3R chrX chr4)
+type=${types[$LSB_JOBINDEX]}
+ref=/g/korbel/shared/datasets/refgenomes/fly/dm6.fa
+echo "SNP calls for ${type}"
+freebayes --version
+
+# freebayes -f ../../ref/dm6_withoutContigs.fa \
+bamaddrg \
+	-b ../../mapping/wgs/000000000-AA703_WGS_CROSS_15s009796-2-1_Ghavi-helm_lane115s009796.sort.rmdup.bam -s cross -r cross.AA703 \
+	-b ../../mapping/wgs/000000000-AA7FA_WGS_CROSS_15s009796-5-1_Ghavi-helm_lane115s009796.sort.rmdup.bam -s cross -r cross.AA7FA \
+	-b ../../mapping/wgs/000000000-AABU7_WGS_VRG_15s009795-1-1_Ghavi-helm_lane115s009795.sort.rmdup.bam   -s virginizer	-r vrg.AABU7 \
+	-b ../../mapping/wgs/000000000-AABWP_WGS_VRG_15s009795-2-1_Ghavi-helm_lane115s009795.sort.rmdup.bam   -s virginizer -r vrg.AACKU \
+	-b ../../mapping/wgs/000000000-AACKU_VRG_WGS_15s009530-1-1_Ghavi-helm_lane115s009530.sort.rmdup.bam   -s virginizer -r vrg.AACLV \
+	-b ../../mapping/wgs/000000000-AACLV_WGS_CROSS_15s009796-1-1_Ghavi-helm_lane115s009796.sort.rmdup.bam -s cross -r cross.AACLV \
+	-b ../../mapping/wgs/000000000-AAD51_DB_CROSS_WGS_15s009531-1-1_Ghavi-helm_lane115s009531.sort.rmdup.bam -s cross -r cross.AAD51 \
+	-b ../../mapping/wgs/000000000-AAD9C_WGS_CROSS_15s009796-4-1_Ghavi-helm_lane115s009796.sort.rmdup.bam -s cross -r cross.AAD9C \
+	-b ../../mapping/wgs/000000000-AAD9M_WGS_CROSS_15s009796-3-1_Ghavi-helm_lane115s009796.sort.rmdup.bam -s cross -r cross.AAD9M \
+	| freebayes -f $ref \
+		--stdin \
+		--no-population-priors \
+		--region ${type} \
+	| vcffilter \
+		-f 'QUAL > 29 & QUAL / AO > 2 & SAF > 1 & SAR > 1 & RPR > 1 & RPL > 1' \
+		-s \
+	| vt normalize -r $ref \
+		-q - 2> /dev/null \
+	| bgzip \
+	> wgs.freebayes-k.filter.norm.${type}.vcf.gz
+tabix -p vcf wgs.freebayes-k.filter.norm.${type}.vcf.gz

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+#BSUB -J map_mate[1-3]
+#BSUB -e hiSeq.matePair.nextClip.merge.bwa.%I.err
+#BSUB -o hiSeq.matePair.nextClip.merge.bwa.%I.out
+#BSUB -M 32000
+#BSUB -n 16
+#BSUB -R "rusage[mem=32000]"
+#BSUB -R "span[hosts=1]"
+
+
+# Note: I manually added a RG afterwards sing Picard tools
+
+bwa=/g/korbel/meiers/tools/bwa-0.7.10/bwa
+#REF=/g/korbel/shared/datasets/refgenomes/fly/dm6.fa
+REF=/g/korbel/shared/projects/drosophila_balancer/data/ref/dm6plusPhiX.fa
+path=/g/korbel/shared/projects/drosophila_balancer/data/trimming/mate
+
+FILES=(dummy hiSeq.matePair.VRG.nextClip.merge hiSeq.matePair.CROSS.nextClip.merge hiSeq.matePair.UNKNOWN.nextClip.merge)
+
+
+sample=${FILES[$LSB_JOBINDEX]}
+f1=$path/${sample}.1.fastq.gz
+f2=$path/${sample}.2.fastq.gz
+
+# map on 16 cores
+$bwa mem -t 16 $REF $f1 $f2 | samtools view -b -T $REF > /scratch/meiers/${sample}.bam
+
+# sort/compress with 16 cores, 1.8GB max memory per thread
+samtools sort -m 1800M -@ 16 /scratch/meiers/${sample}.bam /scratch/meiers/${sample}.sort
+
+# mv back
+mv /scratch/meiers/${sample}.sort.bam ./
+samtools index ${sample}.sort.bam

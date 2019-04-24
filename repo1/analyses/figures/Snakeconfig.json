@@ -1,0 +1,33 @@
+{
+    "path" : "/g/korbel/shared/projects/drosophila_balancer/",
+    "ASE_titles" : {
+        "F1_CyOTM3_headsFemale" : "adult female F1 flies",
+        "N1_pool_6-8h"         : "6-8h embryos, maternally balanced",
+        "N1sex_pool_6-8h"      : "6-8h embryos, paternally balanced",
+        "N1_pool_4-8h"         : "4-8h embryos incl. unfertilized eggs"
+    },
+    "rna_samples" : [
+        "F0_VRG_4-8h_rep1",
+        "F0_VRG_4-8h_rep2",
+        "F0_VRG_heads_rep1",
+        "F0_VRG_heads_rep2",
+        "F1_CyOTM3_headsFemale_rep1",
+        "F1_CyOTM3_headsFemale_rep2",
+        "F1_CyOTM3_headsFemale_rep3",
+        "F1_CyOTM3_headsFemale_rep4",
+        "F1_CyOTM3_heads_rep1",
+        "F1_CyOTM3_heads_rep2",
+        "N1_CyO_heads_rep1",
+        "N1_CyO_heads_rep2",
+        "N1_TM3_heads_rep1",
+        "N1_TM3_heads_rep2",
+        "N1_pool_4-8h_rep1",
+        "N1_pool_4-8h_rep2",
+        "N1_pool_6-8h_rep1",
+        "N1_pool_6-8h_rep2",
+        "N1_pool_heads_rep1",
+        "N1_pool_heads_rep2",
+        "N1sex_pool_6-8h_rep1",
+        "N1sex_pool_6-8h_rep2"
+    ]
+}

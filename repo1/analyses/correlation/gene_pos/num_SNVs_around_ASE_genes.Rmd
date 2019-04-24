@@ -1,0 +1,207 @@
+---
+title: "Number of SNVs around ASE genes"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+> Compile with `Rscript -e 'rmarkdown::render("num_SNVs_around_ASE_genes.Rmd", clean=F, output_format="all");'`
+
+```{r, message=FALSE, warning=FALSE}
+source("common.R")
+# The following variables are read by `common.R`:
+#
+#  * `ASE.adult`, `ASE.embryo`
+#  * `EXONS`, `GENE_SPAN`, `GENE_TSS`
+#
+```
+
+```{bash}
+# Here we read SNP calls (internally).
+if [ ! -f before_SNV_decomposition.snps.bed ]; then
+  zcat ../../../data/variants/SNVs2/wgs.freebayes-k.filter.norm.SNVonly.vcf.gz \
+  | awk 'BEGIN {OFS="\t"} /^chr[23][LR]/ && $10~/^0\/1/ {
+    if ($11~/^0\/0/) {print $1,$2-1,$2,"bal"} 
+    if ($11~/^1\/1/) {print $1,$2-1,$2,"vrg"}}' \
+  > before_SNV_decomposition.snps.bed
+fi
+if [ ! -f snps.bed ]; then
+  zcat ../../../data/variants/SNVs2/wgs.freebayes-k.filter.norm.decomposed.onlySNPs.vcf.gz \
+  | awk 'BEGIN {OFS="\t"} /^chr[23][LR]/ && $10~/^0\/1/ {
+    if ($11~/^0\/0/) {print $1,$2-1,$2,"bal"} 
+    if ($11~/^1\/1/) {print $1,$2-1,$2,"vrg"}}' \
+  > snps.bed
+fi
+```
+
+```{r}
+snps = with(fread("snps.bed"), GRanges(V1, IRanges(V2,V3), type=V4))
+```
+
+### Excluding ASE with known explanations
+
+```{r}
+exclude <- rbind(fread("../../explanation/MEI/explanation.txt"),
+                 fread("../../explanation/CNV/explanation.txt"))
+#  exclude also genes that overlap a breakpoint
+bps <- with(fread("../../tracks/chromosomalBp/bp.bed"), GRanges(V1, IRanges(V2,V3)))
+exclude_bps <- subsetByOverlaps(GENE_SPAN, bps)$gene_id
+exclude <- rbind(exclude, data.table(gene_id = subsetByOverlaps(GENE_SPAN, bps)$gene_id,
+                                     reason = "breakpoint", description = NA))
+```
+
+### Testing number of SNVs around ASE genes
+
+The logic of the final figure is as follows:
+
+  * Take **expressed** genes (embryo)
+  * But remove genes that we have another explanation for ASE (e.g. breakpoint, CNVs, ...)
+  * Divide into **ASE** and non-ASE (**control**) genes
+  * For each TSS, define an interval of a certain size upstream and downstream
+  * Count number of SNPs in the intervals
+  * Do this for varying sizes of intervals
+  * Plot ASE vs. non-ASE genes
+
+Start with selecting background genes. Here are a few controls:
+
+```{r}
+tss <- GENE_TSS[GENE_TSS$gene_id %in% ASE.embryo$gene_id & !(GENE_TSS$gene_id %in% exclude$gene_id),]
+mcols(tss) = merge(mcols(tss), ASE.embryo[,.(gene_id, baseMean, log2FoldChange, padj)], by="gene_id")
+tss$ase = ifelse(tss$padj<0.05, ifelse(tss$log2FoldChange<0,"balancer down","balancer up"), "control")
+```
+
+```{r controls_background1, fig.width=6, fig.height=4, dev=c('png','pdf')}
+ggplot(as.data.table(tss)) + geom_density(aes(x=baseMean, col=ase), size=1.5) +
+    scale_x_log10() + theme(legend.position="bottom") + facet_wrap(~seqnames)
+```
+
+```{r controls_background2, fig.width=6, fig.height=4, dev=c('png','pdf')}
+ggplot(as.data.table(tss)) + aes(start, col = ase) +
+    geom_density(data = as.data.table(snps), aes(start), fill="darkgrey", inherit.aes = F) +
+    geom_density(size=1.5) + theme(legend.position="bottom") +
+    facet_wrap(~seqnames) + ggtitle("Gene distribution (black = SNPs)")
+```
+
+What I noticed in between is this significant (Fisher's exact test) imbalance in chromosomes between up- and down-related genes:
+
+```{r controls_background3, fig.width=6, fig.height=3, dev=c('png','pdf')}
+ggplot(as.data.table(tss)) + aes(seqnames) + geom_bar() + facet_wrap(~ase, scales = "free")
+```
+
+```{r}
+snp_counts = NULL
+boarders = c(0, 2e3, 10e3, 100e3,  500e3, 2e6,  5e6)
+
+for (i in 1:(length(boarders)-1)) {
+
+    for (chrom in c("chr2L","chr2R","chr3L","chr3R")) {
+
+        tss_ = tss[seqnames(tss)==chrom]
+        dostr <- flank(resize(tss_, boarders[i], fix="start"), boarders[i+1] - boarders[i], start=F, both=F)
+        upstr <- flank(resize(tss_, boarders[i], fix="end"),   boarders[i+1] - boarders[i], start=T, both=F)
+
+        for (snp_type in c("bal","vrg")) {
+            for (ase_type in c("control", "balancer down", "balancer up")) {
+                 upstream   = countOverlaps(upstr[upstr$ase==ase_type,], snps[snps$type == snp_type & seqnames(snps) == chrom,])
+                 downstream = countOverlaps(dostr[dostr$ase==ase_type,], snps[snps$type == snp_type & seqnames(snps) == chrom,])
+                 rows =  data.table(size     = paste0(round(boarders[i]/1000,0), "kb-", round(boarders[i+1]/1000,0), "kb"),
+                                snp_type = snp_type,
+                                genes    = ase_type,
+                                where    = "upstream",
+                                num_snps = upstream,
+                                chr      = chrom)
+                 snp_counts = rbind(snp_counts, rows)
+                 rows =  data.table(size     = paste0(round(boarders[i]/1000,0), "kb-", round(boarders[i+1]/1000,0), "kb"),
+                                snp_type = snp_type,
+                                genes    = ase_type,
+                                where    = "downstream",
+                                num_snps = downstream,
+                                chr      = chrom)
+                 snp_counts = rbind(snp_counts, rows)
+            }
+        }
+    }
+}
+snp_counts <- snp_counts[, c("size","snp_type","genes","where") := .(
+                    factor(size, levels=unique(size), ordered = T),
+                    factor(paste(snp_type, "SNPs")), 
+                    factor(genes, levels=c("balancer up", "control", "balancer down"), ordered = T), 
+                    factor(where))]
+```
+
+First let's see whether there is a difference between number of SNPs upstream and downstream of TSS:
+
+```{r num_snvs_upstream_vs_downstream, fig.width=10, fig.height=3.5, dev=c('png','pdf')}
+pvals = snp_counts[, .(upstream = wilcox.test(num_snps ~ where)$p.value), by = size]
+pvals = melt.data.table(pvals, c("size"), variable.name = "where", value.name = "p")
+pvals = pvals[, symbol := ifelse(p<5e-2, ifelse(p<1e-2, ifelse(p<1e-3, "***", "**"), "*"), "ns") ]
+pvals = merge(pvals, snp_counts[, .(num_snps = max(num_snps)), by = size], by = c("size"))
+ggplot(snp_counts) + 
+  aes(where, num_snps, fill=where) +
+  geom_violin() + 
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+               geom = "crossbar", width = 0.5, position = position_dodge(width=1)) +
+  facet_wrap(~ size, nrow = 1, scales="free_y") +
+  geom_text(data = pvals, aes(label = symbol, y=1.1*num_snps), vjust=0, size=4) +
+  my_theme1
+```
+
+Apparently, there is no such difference, which is supported by the p-values from the Wilcoxon test (**ns** == not significant at 5% level).
+
+### Comparing ASE genes to non-ASE genes
+
+```{r num_snvs_ase_vs_nonase_genes, fig.width=10, fig.height=8, dev=c('png','pdf')}
+pvals = snp_counts[, .(`balancer up`   = wilcox.test(num_snps[genes=="balancer up"], num_snps[genes=="control"])$p.value,
+                       `balancer down` = wilcox.test(num_snps[genes=="balancer down"], num_snps[genes=="control"])$p.value),
+                   by=.(size, chr)]
+pvals = melt.data.table(pvals, c("size","chr"), variable.name = "genes", value.name = "p")
+pvals = pvals[, symbol := ifelse(p<5e-2, ifelse(p<1e-2, ifelse(p<1e-3, "***", "**"), "*"), "ns") ]
+pvals = merge(pvals, snp_counts[, .(num_snps = max(num_snps)), by=.(size, chr)], by = c("size","chr"))
+ggplot(snp_counts) + 
+  aes(genes, num_snps, fill=genes) + 
+  geom_violin() + 
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+               geom = "crossbar", width = 0.5, position = position_dodge(width=1)) +
+  scale_y_continuous(expand = c(0.1,0)) +
+  facet_wrap(chr ~ size, nrow=4, scales="free_y") +
+  geom_text(data = pvals, aes(label = symbol, y=1.1*num_snps), vjust=0, size=4) +
+  my_theme1
+```
+
+The p-value compares *balancer up* genes (respectively *balancer down* genes) against the control. They yield significant p-values in a Wilcoxon test.
+
+We can also compare the balancer-up-regulated vs. the balancer-down-regulated counts. Here are the p-values:
+
+```{r}
+pvals = snp_counts[, .(`p-value up vs. down` = wilcox.test(num_snps[genes=="balancer up"], num_snps[genes=="balancer down"])$p.value,
+                       `fold change up vs. down` = mean(num_snps[genes=="balancer up"]) / mean(num_snps[genes=="balancer down"])),
+                   by=.(size)]
+pvals
+```
+
+### Phased SNPs
+
+Eventually we can also differentiate in whether the SNP is on the balancer or virginizer chromosome:
+
+```{r num_snvs_ase_vs_nonase_genes_str_by_snptype, fig.width=8, fig.height=5.5, dev=c('png','pdf')}
+pvals = snp_counts[, .(`balancer up` = wilcox.test(num_snps[genes=="balancer up"], num_snps[genes=="control"])$p.value,
+                       `balancer down` = wilcox.test(num_snps[genes=="balancer down"], num_snps[genes=="control"])$p.value),
+                   by=.(size, snp_type)]
+pvals = melt.data.table(pvals, c("size", "snp_type"), variable.name = "genes", value.name = "p")
+pvals = pvals[, symbol := ifelse(p<5e-2, ifelse(p<1e-2, ifelse(p<1e-3, "***", "**"), "*"), "ns") ]
+pvals = merge(pvals, snp_counts[, .(num_snps = max(num_snps)), by=.(size)], by = c("size"))
+ggplot(snp_counts) + 
+  aes(snp_type, num_snps, fill=genes) + 
+  geom_violin() + 
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+               geom = "crossbar", width = 0.5, position = position_dodge(width=1)) +
+  scale_y_continuous(expand = c(0.1,0)) +
+  facet_wrap(~ size, scales="free_y") +
+  geom_text(data = pvals, aes(label = symbol, y=1.1*num_snps), position = position_dodge(width = 1), vjust=0, size=4) +
+  my_theme2
+```
+
+
+Stars or *ns* specifiy significant/non-significant differences compared to control.
+

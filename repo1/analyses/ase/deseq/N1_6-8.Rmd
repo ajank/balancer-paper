@@ -1,0 +1,631 @@
+---
+title: "ASE analysis in 6-8h fly embryos"
+author: "Sascha Meiers"
+date: "May 25, 2016"
+output: html_document
+---
+
+> Compile with `Rscript -e 'library(knitr); rmarkdown::render("N1_6-8.Rmd", clean=F, output_format="all");'`
+
+# Crossing scheme
+
+### mother.vrg cross 
+
+This is basically the same as in `N1_heads.Rmd`
+
+$F_1$ generation: 
+$$ +/CyO; +/TM3; X/X_b \quad\text{or}\quad +/CyO; +/TM3; X/Y_b $$
+
+$N_1$ generation pool:
+
+| chr2 | chr3 | chrX/Y |
+| ---- | ---- | -------|
+| $1 \times +/CyO$ | $1 \times +/TM3$ | $2 \times X/X$   |
+| $3 \times +/+$   | $3 \times +/+$ | $2 \times X/Y_b$ |
+
+Ergo, there is no more chromosome X from the balanced line.
+
+### father.vrg cross
+
+Parental line. Either male virginizers are used here or only after $F_1$, 
+it doesn't make a difference for $N_1$:
+$$ +/+; +/+; X/Y \quad\text{and}\quad   If/Cyo; Sb/TM3; X_b/X_b $$
+
+$F_1$ generation: 
+$$ +/CyO; +/TM3; X/X_b \quad\text{or}\quad +/CyO; +/TM3; X_b/Y $$
+
+$N_1$ generation pool:
+
+| chr2 | chr3 | chrX/Y |
+| ---- | ---- | -------|
+| $1 \times +/CyO$ | $1 \times +/TM3$ | $X/X$, $X_b/X$   |
+| $3 \times +/+$   | $3 \times +/+$   | $X/Y$, $X_b/Y$ |
+
+Hence we expect a balancer ratio for the X chromosome of 
+
+ - $2/6 = 33\%$ in DNA
+ - $3/8 = 37.5\%$ in RNA due to dosage compensation
+ 
+# Determining ASE using DeSeq
+
+```{r, message=FALSE, warning=FALSE}
+source("common.R")
+```
+
+### Input data preparation
+
+> Note there was a sample swap at the very beginning: *N1_6_8* referse to a 
+> maternal balancer, whereas *N1sex_6_8* refers to the original paternal 
+> balancer
+
+```{r}
+n=c("SampleName",              "File",                                         "Haplotype",  "Line",       "Replicate")
+x=c("N1_6.8_father.vrg_1_BAL", "N1_pool_6-8h_rep1.alt.htseq-count-rev.txt",    "balancer",   "father.vrg", "1",
+    "N1_6.8_father.vrg_1_VRG", "N1_pool_6-8h_rep1.ref.htseq-count-rev.txt",    "virginizer", "father.vrg", "1",
+    "N1_6.8_father.vrg_2_BAL", "N1_pool_6-8h_rep2.alt.htseq-count-rev.txt",    "balancer",   "father.vrg", "2",
+    "N1_6.8_father.vrg_2_VRG", "N1_pool_6-8h_rep2.ref.htseq-count-rev.txt",    "virginizer", "father.vrg", "2",
+    "N1_6.8_mother.vrg_1_BAL", "N1sex_pool_6-8h_rep1.alt.htseq-count-rev.txt", "balancer",   "mother.vrg", "1",
+    "N1_6.8_mother.vrg_1_VRG", "N1sex_pool_6-8h_rep1.ref.htseq-count-rev.txt", "virginizer", "mother.vrg", "1",
+    "N1_6.8_mother.vrg_2_BAL", "N1sex_pool_6-8h_rep2.alt.htseq-count-rev.txt", "balancer",   "mother.vrg", "2",
+    "N1_6.8_mother.vrg_2_VRG", "N1sex_pool_6-8h_rep2.ref.htseq-count-rev.txt", "virginizer", "mother.vrg", "2" )
+D = data.frame(matrix(x, byrow=T,ncol=5))
+colnames(D) = n
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+```
+
+I filter out genes with < 30 counts (per sample)
+
+```{r}
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ 1) # start without design
+DE <- DE[ rowSums(counts(DE)) >= 4*30, ]
+# stringent_cov_cutoff <- read.table("N1_6-8.stringent_cov_filter.gene_ids.txt", header=F)
+# DE <- DE[ rownames(counts(DE)) %in% stringent_cov_cutoff$V1, ]
+```
+
+**`r dim(DE)[1]` genes** can be analysed. 
+Here are the balancer ratios before sizeFactor estimation:
+
+```{r, echo=F}
+DE_long = assay_long(assay(DE), colData(DE)) %>%
+          merge(., gff, by = "gene_id", all.x=T)
+DE_rlog_a <- assay(rlog(DE, blind=FALSE, fitType = "local")) %>% 
+             assay_long %>%
+             merge(., gff, by="gene_id")
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4, dev=c('png','pdf')}
+DE_long %>%
+  dcast(., Line + Replicate + gene_id ~ Haplotype, value.var = "count") %>% 
+  ggplot() + 
+  aes(balancer/(balancer + virginizer), fill = Replicate) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  theme_minimal() + 
+  facet_grid(. ~ Line) + 
+  geom_vline(xintercept=0.25, linetype="dashed", alpha=0.4)
+```
+
+The same, but stratified by chromosome:
+
+```{r, message=FALSE, warning=FALSE, fig.width=9, fig.height=6, dev=c('png','pdf')}
+DE_long %>%
+  mutate(chrom2 = factor(substr(as.character(DE_long$chrom), 4,4))) %>%
+  dcast(., chrom2 + Line + Replicate + gene_id ~ Haplotype, value.var = "count") %>% 
+  filter(chrom2 != "4") %>%
+  ggplot() + 
+  aes(balancer/(balancer + virginizer), fill = chrom2) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  coord_cartesian(ylim=c(0,10)) + 
+  theme_minimal() + 
+  facet_grid(Replicate ~ Line) + 
+  geom_vline(xintercept = 0.33, linetype="dotted", color="red", alpha=0.5) +
+  geom_vline(xintercept = 0.375, linetype="dashed", color="black", alpha=0.5)
+```
+
+### Data inspection
+
+```{r, message=FALSE, warning=FALSE, fig.width=6, fig.height=6, dev=c('png','pdf')}
+mm = as.matrix(dist(t(assay(rlog(DE, blind=FALSE)))))
+#colnames(mm) = NULL
+pheatmap(mm,  cluster_rows = T, cluster_cols = T, 
+         color = colorRampPalette(rev(brewer.pal(9, "Blues")) )(255))
+```
+
+Here I plot the corrleation of normalized and 'r-logged' read counts per gene:
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+dcast(DE_rlog_a, Line + Haplotype + gene_id + chrom ~ Replicate, 
+      value.var = "count") %>%
+  ggplot() + 
+  aes(`1`,`2`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_grid(Haplotype ~ Line) +
+  xlab("1st replicate [log2 read count]") +
+  ylab("2nd replicate [log2 read count]") +
+  ggtitle("Correlation between replicates")
+```
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+dcast(DE_rlog_a, Line + Replicate + gene_id + chrom  ~ Haplotype, 
+      value.var = "count") %>%
+  ggplot() + 
+  aes(`balancer`,`virginizer`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_grid(Replicate ~ Line) +
+  xlab("Balancer haplotype [log2 read count]") +
+  ylab("Wild type haplotype [log2 read count]") +
+  ggtitle("Correlation between haplotypes")
+```
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+dcast(DE_rlog_a, Haplotype + Replicate + gene_id + chrom ~ Line, 
+      value.var = "count") %>%
+  ggplot() + 
+  aes(`mother.vrg`,`father.vrg`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_grid(Replicate ~ Haplotype) +
+  xlab("normal cross [log2 read count]") +
+  ylab("reversed sex cross [log2 read count]") +
+  ggtitle("Correlation between the two crosses")
+``` 
+
+Finally also a PCA:
+
+```{r, echo=F, width=6, height=6, dev=c('png','pdf')}
+plotPCA( rlog(DE, blind=FALSE), ntop=2000,intgroup=c("Haplotype","Line")) + 
+  theme_minimal() + 
+  theme(legend.position = c(0.05,0.95), legend.justification = c(0,1))
+```
+
+
+--
+
+
+## DE analysis
+
+### Allele ratios that change consistently across all 4 replicates
+
+```{r, message=FALSE}
+design(DE) <- ~ Replicate + Line + Haplotype
+Title <- "Balancer vs. virginizer (across all 4 replicates)"
+DE <- DE[ rownames(DE) %in% filter(gff, grepl('chr[32][LR]', chrom))$gene_id, ]
+A = DESeq(DE)
+R = results(A, contrast=c("Haplotype", "balancer", "virginizer"))
+R = R[!is.na(R$pval),] # this should be only a handful
+```
+
+```{r, message=FALSE, warnings=F, fig.height=8, dev=c('png','pdf')}
+corr = fdrtool(R$stat, plot = T)
+```
+
+```{r, fig.width=8, fig.height=3, dev=c('png','pdf'), echo=F}
+rbind(data.frame(p = R$padj, t = "before correction"),
+      data.frame(p = corr$pval, t = "after correction")) %>%
+  ggplot() + aes(p) + theme_minimal() +
+    geom_histogram(binwidth=0.1) + scale_x_log10() +
+    facet_grid(.~t, scales="free")
+R$pvalue = corr$pval
+R$padj = corr$qval
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+ggplot(as.data.frame(R)) + 
+  aes(y=-log10(pvalue), x=log2FoldChange, col = padj<0.05) + 
+  geom_point(size=1) +
+  ylab("-log10(corr. p-value)") + 
+  theme_bw() + 
+  ggtitle(Title) + 
+  theme(legend.position=c(.98, 0.98), legend.justification=c(1,1)) + 
+  scale_colour_discrete(name=NULL, labels=c("not significant",
+            expression(p[corrected] <= '5%')) )
+```
+
+There are dim  with **`r dim(R[R$padj<= 0.05, ])[1]` genes**
+fdr-corrected p-value of 5% or less, or **`r dim(R[R$padj<= 0.05 & abs(R$log2FoldChange) > log(1.5, base=2), ])[1]` genes** if you require a 
+minimum fold change of 1.5. Here you see the effect size (absolute 
+log2 fold change) among those:
+
+```{r, echo=FALSE, message=FALSE, fig.height=3, fig.width=5, dev=c('png','pdf')}
+as.data.frame(R) %>% filter(padj<= 0.05) %>%
+  ggplot() + aes(log2FoldChange) + 
+  geom_histogram(binwidth=0.1) +
+  theme_minimal() +
+  ggtitle(Title)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+plotMA(R)
+```
+
+> No longer write files - this will be done by `DESeq.Rmd`.
+
+```{r}
+# write.table(R, file = "DESeq.N1_6-8h.standardFormat.txt", quote = F, sep = "\t")
+# x <- as.data.frame(R) %>%
+#     mutate(gene_id = rownames((R))) %>%
+#     filter(padj<0.05) %>%
+#     dplyr::select(gene_id)
+# write.table(x, file = "N1_6-8h.gene_id", row.names = F, col.names = F, quote=F)
+```
+
+Here I can also inpsect some genes, e.g. the top 12 (order might be wrong):
+
+```{r, fig.height=9, fig.width=12, dev=c('png','pdf')}
+topGenes <- rownames(R)[order(R$padj)]
+geneCountData(topGenes[1:12], A, intgroup=c("Haplotype","Line", "Replicate")) %>%
+  merge(., gff, by.x="gene", by.y="gene_id", all.x=T) %>%
+  ggplot(., aes(x = Haplotype, y = count, color = Line, 
+            group = interaction(Line, Replicate))) +
+  scale_y_log10(breaks=c(10,100,1000,10000)) +
+  geom_line() +
+  geom_point(size=3) +
+  theme_minimal() +
+  facet_wrap(~ gene + chrom)
+```
+
+```{r, fig.height=4, fig.width=6, dev=c('png','pdf')}
+cf = coef(A)["FBgn0035968",]
+cf_intercept = 2**(cf["Intercept"])
+cf_BAL       = cf_intercept * 2**(cf["Haplotypebalancer"])
+cf_VRG       = cf_intercept * 2**(cf["Haplotypevirginizer"])
+cf_BAL_moth  = cf_BAL * 2**(cf["Linemother.vrg"])
+cf_BAL_fath  = cf_BAL * 2**(cf["Linefather.vrg"])
+cf_VRG_moth  = cf_VRG * 2**(cf["Linemother.vrg"])
+cf_VRG_fath  = cf_VRG * 2**(cf["Linefather.vrg"])
+geneCountData("FBgn0035968", A, intgroup=c("Haplotype","Line", "Replicate")) %>%
+  merge(., gff, by.x="gene", by.y="gene_id", all.x=T) %>%
+  ggplot(., aes(x = Haplotype, y = count, color = Line, 
+            group = interaction(Line, Replicate))) +
+  geom_line() +
+  geom_point(size=3) +
+  theme_minimal() +
+  geom_hline(yintercept = cf_intercept, col="black", linetype="dashed", size=1) + 
+  geom_hline(yintercept = cf_BAL, col="orange", linetype="dashed") + 
+  geom_hline(yintercept = cf_VRG, col="orange", linetype="dashed") +
+  geom_hline(yintercept = cf_VRG_moth, col="darkturquoise", linetype="dotted") +
+  geom_hline(yintercept = cf_BAL_moth, col="darkturquoise", linetype="dotted") +
+  geom_hline(yintercept = cf_VRG_fath, col="red", linetype="dotted") +
+  geom_hline(yintercept = cf_BAL_fath, col="red", linetype="dotted") +
+  ggtitle("Example: Composition of FBgn0035968")
+```
+
+
+
+### ~~Correcting size factors~~
+
+```{r}
+DE <- estimateSizeFactors(DE)
+```
+
+Size factors from the estimation:
+
+```{r, echo=F}
+pos <- seq(1,8,2) # 1,3,5,7
+s <- sizeFactors(DE)
+s
+s[pos+1] / s[pos]
+```
+
+As you can see, the ratio $s_{vrg} : s_{bal}$ is nearly 3, but not exactly 3.
+~~I am going to correct for that here by adjusting $s_{bal}' = \frac{1}{4}(s_{bal}+s_{vrg})$, and $s_{vrg}'$ respectively.~~
+
+> I will not correct the size factor because it is close enough to 3 and because of Bernd's recommondation. Also the correction would have to be done in multiplicative space
+
+
+### How to find genes that are maternally deposited
+
+The idea is to test for an interaction between haplotype and line.
+Note that the formula below should correct for common effects of the 
+line or the haplotype and only find significant differences in their
+**interaction term**!
+
+```{r, message=FALSE, warning=FALSE}
+DE_2 <- DE # chrX is already removed
+design(DE_2) <- ~ Line*Haplotype # = Line + Haplotype + Line:Haplotype
+Title <- "Interaction between line and haplotype"
+A_2 = DESeq(DE_2)
+R_2 = results(A_2)
+R_2 = R_2[!is.na(R_2$pval),]
+corr = fdrtool(R_2$stat, plot = F)
+R_2$pvalue = corr$pval
+R_2$padj   = corr$qval
+summary(R_2)
+```
+
+```{r}
+x <- as.data.frame(R_2) %>%
+    mutate(gene_id = rownames((R_2))) %>%
+    filter(padj<0.05) %>%
+    dplyr::select(gene_id)
+write.table(x, file = "N1_6-8h.interaction.gene_id", row.names = F, col.names = F, quote=F)
+```
+
+```{r, echo=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+ggplot(as.data.frame(R_2)) + 
+  aes(y=-log10(pvalue), x=log2FoldChange, col = padj<0.05) + 
+  geom_point(size=1) +
+  ylab("-log10(corr. p-value)") + 
+  theme_bw() + 
+  ggtitle(Title) + 
+  theme(legend.position=c(.98, 0.98), legend.justification=c(1,1)) + 
+  scale_colour_discrete(name=NULL, labels=c("not significant",
+            expression(p[corrected] <= '5%')) )
+```
+
+There are dim **`r dim(R_2[R_2$padj<= 0.05, ])[1]` genes** with 
+fdr-corrected p-value of 5% or less (**`r dim(R_2[R_2$padj<= 0.1, ])[1]` genes** for 10%). Here you see the effect 
+size (absolute log2 fold change) among those:
+
+```{r, echo=FALSE, message=FALSE, fig.height=3, fig.width=5, dev=c('png','pdf')}
+as.data.frame(R_2) %>% filter(padj<= 0.05) %>%
+  ggplot() + aes(log2FoldChange) + 
+  geom_histogram(binwidth=0.5) +
+  theme_minimal() +
+  ggtitle(Title)
+```
+
+```{r, echo=F, fig.width=7, fig.height=6, dev=c('png','pdf')}
+plotMA(R_2)
+```
+
+```{r, fig.height=9, fig.width=12, dev=c('png','pdf')}
+topGenes <- rownames(R_2)[order(R_2$padj)]
+geneCountData(topGenes[1:12], A_2, intgroup=c("Haplotype","Line", "Replicate")) %>%
+  merge(., gff, by.x="gene", by.y="gene_id", all.x=T) %>%
+  ggplot(., aes(x = Haplotype, y = count, color = Line, 
+            group = interaction(Line, Replicate))) +
+  scale_y_log10(breaks=c(10,100,1000,10000)) +
+  geom_line() +
+  geom_point(size=3) +
+  theme_minimal() +
+  facet_wrap(~ gene + chrom)
+```
+
+
+--
+
+
+# Annotating genes (chrom 2+3 only)
+
+First I want to get chromosomal and size information:
+
+```{r}
+R_anno <- filter(DE_rlog_a, grepl('chr[23][LR]', chrom))
+```
+
+Next, annotate with results from the DESeq tests performed above:
+
+```{r}
+# cis  = test for ASE
+R_anno <- data.frame(R, gene_id = rownames(R), row.names=NULL) %>% 
+  dplyr::select(gene_id, cis.padj = padj, cis.lfc = log2FoldChange, cis.pval = pvalue) %>% 
+  merge(R_anno, ., by="gene_id", all.x = T)
+# int = test for the interaction of Line and Haplotype (maternal deposition)
+R_anno <- data.frame(R_2, gene_id = rownames(R_2), row.names=NULL) %>% 
+          dplyr::select(gene_id, int.padj = padj, int.lfc = log2FoldChange) %>%
+          merge(R_anno, ., by="gene_id", all.x = T)
+```
+
+Then, annotate genes with total expression:
+
+```{r}
+# Expression from N1_6-8h data
+R_anno <- read_htseqcount("N1_pool_6-8h_rep1.htseq-count-rev.txt", gff) %>%
+    rename(N1_norm.1.count = count, N1_norm.1.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+R_anno <- read_htseqcount("N1_pool_6-8h_rep2.htseq-count-rev.txt", gff) %>%
+    rename(N1_norm.2.count = count, N1_norm.2.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)    
+R_anno <- read_htseqcount("N1sex_pool_6-8h_rep1.htseq-count-rev.txt", gff) %>%
+    rename(N1_rsex.1.count = count, N1_rsex.1.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+R_anno <- read_htseqcount("N1sex_pool_6-8h_rep2.htseq-count-rev.txt", gff) %>%
+    rename(N1_rsex.2.count = count, N1_rsex.2.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+# unf = expresison in unfertilised eggs of +/+ genotype
+R_anno <- read_htseqcount("unfert_24h_rep1_RNA.Aligned.out.filt.nameSorted.bam.counts.txt",
+                          gff, dir = "../../gene_expression/other/") %>%
+    dplyr::rename(unf.count = count, unf.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+```
+
+### Annotated plots (chrom 2+3 only)
+
+```{r}
+# Plot object
+R_anno_cast <- dcast(R_anno, 
+                     Line + Replicate + chrom + gene_id + cis.padj + int.padj + unf.count + unf.fpkm ~ Haplotype, 
+                     value.var = "count") %>%
+    mutate(cis.padj.fac = cut(cis.padj, breaks=c(0, 0.01, 0.05, 0.1, 1)),
+           int.padj.fac = cut(int.padj, breaks=c(0, 0.01, 0.05, 0.1, 1)),
+           unf.expr.fac = cut(unf.fpkm, breaks=c(0, 20, 600, Inf)))
+head(R_anno_cast)
+```
+
+Color genes based on their adjusted p-values in the correlation plot:
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+  ggplot(R_anno_cast) + 
+    aes(`balancer`,`virginizer`, col = cis.padj.fac) + 
+    geom_point(alpha=0.7, size=0.1) + 
+    theme_minimal() + 
+    facet_grid(Replicate ~ Line) +
+    xlab("Balancer haplotype [log2 read count]") +
+    ylab("Wild type haplotype [log2 read count]") +
+    ggtitle("Genes significant in haplotype test") + 
+    guides(colour = guide_legend(override.aes = list(size=6))) +
+    scale_colour_brewer(type="seq", direction=-1, 
+                        name="DE between haplotype (adj. p-value)") +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+```
+
+```{r, echo=F}
+# Plots for presentaiton
+R_anno_cast %>% filter(Line == "father.vrg", Replicate == 1) %>% 
+ggplot + 
+    aes(`balancer`,`virginizer`, col = cis.padj.fac) + 
+    geom_point(alpha=0.7, size=0.2) + 
+    theme_minimal() + 
+    xlab("Balancer [log2 read count]") +
+    ylab("Wild type [log2 read count]") +
+    ggtitle("DE between haplotypes") + 
+    guides(colour = guide_legend(override.aes = list(size=3))) +
+    scale_colour_brewer(type="seq", direction=-1, 
+                        name="Adj. p-value") +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+ggsave("plot.N1sex_rep1.1.pdf", width=6, height=4)
+
+R_anno_cast %>% filter(Line == "father.vrg", Replicate == 1) %>% 
+    mutate(sig = factor(cis.padj<0.05, levels=c(T,F), labels=c("adj. p-value < 0.05", "insignificant") ) ) %>%
+ggplot + 
+    aes(`balancer`,`virginizer`, col = sig) + 
+    geom_point(alpha=0.7, size=0.2) + 
+    theme_minimal() + 
+    xlab("Balancer [log2 read count]") +
+    ylab("Wild type [log2 read count]") +
+    ggtitle("DE between haplotypes") + 
+    guides(colour = guide_legend(override.aes = list(size=3))) +
+    scale_colour_manual(values=c("dodgerblue4", "lightblue"), name=NULL) +
+    #scale_colour_brewer(type="seq", direction=-1, name=NULL) +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+ggsave("plot.N1sex_rep1.2.pdf", width=6, height=4)
+```
+
+Color genes based on their "expression" in unfertilized eggs:
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+ggplot(R_anno_cast) + 
+    aes(`balancer`,`virginizer`, col = unf.expr.fac) + 
+    geom_point(alpha=0.5, size=0.1) + 
+    theme_minimal() + 
+    facet_grid(Replicate ~ Line) +
+    xlab("Balancer haplotype [log2 read count]") +
+    ylab("Wild type haplotype [log2 read count]") +
+    ggtitle("Genes deposited in 2-4hunfertilised eggs (+/+)") + 
+    guides(colour = guide_legend(override.aes = list(size=6))) +
+    scale_colour_brewer(type="seq", 
+                        name="log2 read count in unf. eggs") +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+```
+
+Color genes significant in the interaction term analysis
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+ggplot(R_anno_cast) + 
+    aes(`balancer`,`virginizer`, col = int.padj.fac) + 
+    geom_point(alpha=0.7, size=0.1) + 
+    theme_minimal() + 
+    facet_grid(Replicate ~ Line) +
+    xlab("Balancer haplotype [log2 read count]") +
+    ylab("Wild type haplotype [log2 read count]") +
+    ggtitle("Genes significant in interaction test (without X)") + 
+    guides(colour = guide_legend(override.aes = list(size=6))) +
+    scale_colour_brewer(type="seq", direction=-1, 
+                        name="DE interaction term (adj. p-value)") +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+```
+ 
+```{r, echo=F}
+# Plots for presentaiton
+R_anno_cast %>% filter(Line == "father.vrg", Replicate == 1) %>% 
+ggplot + 
+    aes(`balancer`,`virginizer`, col = int.padj.fac) + 
+    geom_point(alpha=0.7, size=0.2) + 
+    theme_minimal() + 
+    xlab("Balancer [log2 read count]") +
+    ylab("Wild type [log2 read count]") +
+    ggtitle("Genes significant in interaction test") + 
+    guides(colour = guide_legend(override.aes = list(size=3))) +
+    scale_colour_brewer(type="seq", direction=-1, 
+                        name="Adj. p-value") +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+ggsave("plot.N1sex_rep1.interaction1.pdf", width=6, height=4)
+
+R_anno_cast %>% filter(Line == "father.vrg", Replicate == 1) %>% 
+    mutate(sig = factor(int.padj<0.05, levels=c(T,F), labels=c("adj. p-value < 0.05", "insignificant") ) ) %>%
+ggplot + 
+    aes(`balancer`,`virginizer`, col = sig) + 
+    geom_point(alpha=0.7, size=0.2) + 
+    theme_minimal() + 
+    xlab("Balancer [log2 read count]") +
+    ylab("Wild type [log2 read count]") +
+    ggtitle("Genes significant in interaction test") + 
+    guides(colour = guide_legend(override.aes = list(size=3))) +
+    scale_colour_manual(values=c("dodgerblue4", "lightblue"), name=NULL) +
+    #scale_colour_brewer(type="seq", direction=-1, name=NULL) +
+    theme(legend.position = c(0,1), legend.justification = c(0,1))
+ggsave("plot.N1sex_rep1.interaction2.pdf", width=6, height=4)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4, dev=c('png','pdf')}
+# Plots for presentation
+R_anno_cast %>% dplyr::filter(int.padj <= 0.1) %>%
+  ggplot() + 
+  aes(balancer/(balancer + virginizer), fill = Replicate) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  theme_minimal() + 
+  facet_grid(. ~ Line) + 
+  geom_vline(xintercept=0.25, linetype="dashed", alpha=0.4)
+```
+
+Are the genes that I found to be maternally deposited "expressed" in unfertilized eggs?
+
+```{r, echo=F, width=9, height=5, dev=c('png','pdf')}
+R_anno %>% 
+    select(gene_id,  unf.fpkm, int.padj) %>% 
+    group_by(gene_id) %>% 
+    summarize_each(funs(first)) %>% 
+  ggplot() + aes(int.padj, unf.fpkm) + 
+    geom_point(alpha=0.4) + scale_y_log10() +
+    scale_x_log10(breaks=c(1e-12,1e-10,1e-8,1e-6,1e-4,1e-2)) + 
+    theme_minimal() + geom_vline(xintercept=0.1, color="red", linetype = "dashed") + 
+    ggtitle("Interaction test vs. unfertilised egg expression (without X)") + 
+    xlab("interaction test [adj. p-value]") + 
+    ylab("transcript level in unfertilized eggs [FPK]")
+```
+
+### Writing down a table of significant genes
+
+On which chromosomes are these sign. genes?
+
+```{r}
+tab <- R_anno %>% 
+    select(-sample, -count, -Haplotype, -Replicate, -Line) %>% 
+    group_by(gene_id) %>% 
+    summarize_each(funs(first)) %>%
+    arrange(cis.padj)
+```
+
+Explanation of important columns:
+
+ - `chrom`, `from`, `to`: rough genomic position
+ - `cis.padj`: adj. p-value for DE genes (vrg vs. balancer)
+ - `cis.lfc`:  log fold change (vrg vs. balancer)
+ - `int.padj`: adj. p-value for maternally deposited genes (X chrom is special)
+ - `int.lfc`: log fold change for mat. deposition interaction
+ - `*.count`: Raw expression read count
+ - `*.fpkm`: FPKM-normalized read counts - those are comparible across samples
+ 
+```{r}    
+write.table(tab[order(tab$cis.lfc, decreasing=T),], row.names=F, quote=F, file = "DESeq.N1_6-8h.chr2_3.txt", sep="\t")
+```
+
+
+
+
+## Test
+
+```{r}
+xxx = read.table("../explain_weird_genes/MEI.gene_ids.txt")
+XR = as.data.frame(R) %>% 
+    mutate(gene_id = rownames(R)) %>%
+    filter(padj<=0.05) %>% 
+    arrange(log2FoldChange)
+XR$pos = seq(1, dim(XR)[1])
+ggplot(XR) + aes(pos, log2FoldChange, fill = gene_id %in% xxx$V1) + geom_bar(stat="identity", size=0) + theme_minimal() + theme(legend.position = "none") + scale_fill_manual(values=c("grey", "darkblue")) + xlab(NULL)
+ggsave("N1_6-8.MEI_lfc.pdf", width=12, height=2.5)
+summary(XR$log2FoldChange[XR$log2FoldChange<0])
+summary(XR$log2FoldChange[XR$log2FoldChange>0])
+```

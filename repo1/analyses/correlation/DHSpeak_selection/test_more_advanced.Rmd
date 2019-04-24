@@ -1,0 +1,170 @@
+---
+title: 'More advanced test: Deletions inside DHS regions'
+author: "Sascha Meiers"
+date: "31/3/2017"
+output: html_document
+---
+
+> Compile with `Rscript -e 'library(knitr); rmarkdown::render("test_more_advanced.Rmd", clean=F, output_format="all");'`
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(GenomicRanges))
+```
+
+
+### Function from Alek
+
+(Copied from `/g/furlong/project/33_Hi-C/src/R/functions_balancer_annotations.R` 12.11.2018)
+
+```{r}
+subset_overlap_percent <- function(query, subject, percentage)
+{
+  subject <- reduce(subject)
+  ov <- findOverlaps(query, subject)
+  ov_dt <- data.table(query = queryHits(ov), query_width = width(query[queryHits(ov)]),
+    overlap_width = width(pintersect(query[queryHits(ov)], subject[subjectHits(ov)])))
+  ov_dt <- ov_dt[, list(overlap_width = sum(overlap_width)), by = c("query", "query_width")]
+  sel <- ov_dt[overlap_width / query_width >= percentage]$query
+  return(query[sel])
+}
+```
+
+
+```{r}
+DEL_new = fread("../../SV_filter/FINAL/DEL.final.bed")
+DEL_new = DEL_new[, .(chrom = V1, start = V2, end = V3, GT = substr(V4,1,7))]
+
+DEL_BAL = with(DEL_new[GT=="0/1_0/0",], GRanges(chrom, IRanges(start,end)))
+DEL_VRG = with(DEL_new[GT=="0/1_1/1",], GRanges(chrom, IRanges(start,end)))
+
+# Remove chromosome X
+DEL_BAL = DEL_BAL[grepl('chr[23][LR]', seqnames(DEL_BAL))]
+DEL_VRG = DEL_VRG[grepl('chr[23][LR]', seqnames(DEL_VRG))]
+
+
+DEL_all = sort(c(DEL_BAL,DEL_VRG))
+
+CAD = with(fread("../../tracks/enhancer/CAD4_plus_vienna_dm6.core80percent.onlyChr2and3.bed"),
+           GRanges(V1, IRanges(V2,V3)))
+DHS = with(fread("../../tracks/enhancer/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed"),
+           GRanges(V1, IRanges(V2,V3)))
+fread("../../SV_filter/FINAL/DEL.final.bed")
+```
+
+Fix coordinates
+```{r}
+start(DHS)     <- start(DHS) + 1
+start(DEL_all) <- start(DEL_all) + 1
+start(DEL_BAL) <- start(DEL_BAL) + 1
+start(DEL_VRG) <- start(DEL_VRG) + 1
+```
+
+We were not happy with the plots `DHS_delbal_min5pc.pdf` and `DHS_delvrg_min5pc.pdf` produced in `test_cnvs.sh`, because it does not allow a comparison between the selection on the balancer chromosome vs. the wild type chromosome.
+
+Of course the balancer chromosomes contain **more deletions** in total numbers than the wild type chromosome, but we are also interested in where they fall. That's why here we sample down the 
+
+```{r del_size_distribution, fig.width=6, fig.height=3, dev=c('png','pdf')}
+DEL.dt = rbind(cbind(as.data.table(DEL_BAL),type="balancer"), cbind(as.data.table(DEL_VRG),type="bvirginizer"))
+ggplot(DEL.dt) + aes(end-start) + 
+  geom_histogram(binwidth=0.11) + 
+  theme_classic() + 
+  scale_x_log10(breaks=c(20,40,100,300,1000,5000)) + 
+  xlab("Deletion size") + 
+  facet_wrap(~type) + 
+  ggtitle("Size distribution")
+```
+
+```{r, echo=FALSE}
+# Source: https://github.com/leekgroup/enrichedRanges/blob/master/R/randomInterval.R
+randomInterval <- function(I, n = 1, ms = 10000, strand.specific = FALSE, randomize.strand = FALSE) 
+    {
+    stopifnot(is(I, "GRanges"))
+    
+    seqs <- width(I)
+    sample_sequence <- function(m, seqs = seqs) {
+        ps <- pmax(0, as.numeric(seqs - m + 1))
+        psum <- sum(ps)
+        if (psum == 0) {
+            stop(paste("no sequence is long enough to sample an interval of length ", 
+                m, sep = ""))
+        }
+        prob <- ps / psum
+        sample(seq_len(length(seqs)), size = 1, prob = prob)
+    }
+    ## vector ms
+    xs <- sapply(cbind(1:n, ms)[, 2], sample_sequence, seqs = seqs)
+    
+    starts <- mapply(function(min, max) {
+        as.integer(round(runif(n = 1, min = min, max = max)))
+        }, start(I)[xs], end(I)[xs])
+    
+    if(strand.specific) {
+        if(randomize.strand) {
+            strand <- sample(c("+", "-"), size = length(starts), replace = TRUE)
+        } else {
+            strand <- strand(I)[xs]
+        }
+        
+    } else {
+        strand <- "*"
+    }
+    
+    seqnames <- seqnames(I)[xs]
+    gr <- GRanges(seqnames = seqnames, ranges = IRanges(starts, starts + 
+        ms - 1), strand = strand, seqlengths = seqlengths(I)[unique(seqnames)] )
+    
+    return(gr)
+}
+```
+
+Sample down balancer deletions and virginizer deletions to the same number (e.g. 1000) and calculate their overlap with DHS peaks. 
+
+
+```{r}
+n_sample = 1000
+iterations = 500
+
+sample.dt = function(dt, n) {
+  return (dt[sample(1:nrow(dt), n),])
+}
+sample.gr = function(gr, n) {
+  return (gr[sort(sample(1:length(gr), n)),])
+}
+genome = GRanges(c("chr2L", "chr2R" ,"chr3L", "chr3R"), 
+                 IRanges(c(0,0,0,0),
+                         c(23513712, 25286936, 28110227, 32079331)))
+dat = NULL
+for (i in 1:iterations) {
+    DEL_BAL_sample = sample.gr(DEL_BAL,n_sample)
+    dat = rbind(dat, data.table(type="balancer",
+                  count = length(subset_overlap_percent(DHS, DEL_BAL_sample, 0.05))))
+    DEL_VRG_sample = sample.gr(DEL_VRG,n_sample)
+    dat = rbind(dat, data.table(type="virginizer",
+                  count = length(subset_overlap_percent(DHS, DEL_VRG_sample, 0.05))))
+}
+```
+
+For the background, sample the same number of deletions from the combined bal+vrg set and then randomly re-distribute those inversions across the genome.
+
+```{r}
+for (i in 1:iterations) {
+  DEL_all_sample = sort(randomInterval(genome, n_sample, width(sample.gr(DEL_all, n_sample))))
+  dat = rbind(dat, data.table(type="background",
+                  count = length(subset_overlap_percent(DHS, DEL_all_sample, 0.05))))
+}
+```
+
+```{r sampled_bal_vs_vrg, fig.width=6, fig.height=3, dev=c('png','pdf')}
+ggplot(dat) + aes(count, fill = type) +
+  geom_density(alpha=0.3) +
+  xlab("Number of affected DHS regions") +
+  theme_classic()
+```
+
+```{r}
+dat[, .(mean = mean(count)), by = type]
+wilcox.test(dat[type=="balancer",]$count, dat[type=="virginizer",]$count)
+write.table(dat, file = "test_more_advanced.data.txt", quote=F, sep = "\t", row.names = F)
+```

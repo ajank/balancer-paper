@@ -1,0 +1,611 @@
+---
+title: "Controls for cross effects using adult flies (CyO, TM3, F1, N1)"
+author: "Sascha Meiers"
+date: "May 20, 2017"
+output: html_document
+---
+
+> Compile with `Rscript -e 'rmarkdown::render("DE_control.Rmd", clean=F, output_format="all");'`
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+source("common.R")
+library(data.table)
+library(cowplot)
+library(scales)
+
+COVPERSAMPLE = 30
+ALPHA = 0.05
+MINLFC = log2(1.5)
+
+filter_genes <- function(DE, thr_per_sample = COVPERSAMPLE, chrom_regex = 'chr[32][LR]') {
+  DE <- DE[ rownames(DE) %in% filter(gff, grepl(chrom_regex, chrom))$gene_id, ]
+  DE <- DE[ rowSums(counts(DE)) >= ncol(DE)/2*thr_per_sample, ]
+  return (DE)
+}
+
+fdr_correction <- function(R) {
+  corr = fdrtool(R$stat, plot = F)
+  p <- rbind(data.frame(p = R$padj,    t = "before correction"),
+      data.frame(p = corr$pval, t = "after correction")) %>%
+    ggplot() + aes(p) + theme_minimal() +
+      geom_histogram(binwidth=0.1) + scale_x_log10() +
+      facet_grid(.~t, scales="free")
+  #print(p)
+  R$pvalue = corr$pval
+  R$padj = corr$qval
+  return(R)
+}
+
+plot_MA <- function(R, min_lfc = MINLFC) {
+  dt <- cbind(as.data.table(R), gene_id = rownames(R))
+  p1 <- ggplot(dt[padj <= ALPHA, ]) + 
+      aes(log2FoldChange) + 
+      geom_histogram(binwidth=0.1) +
+      theme_classic() + 
+      scale_x_continuous(breaks=-4:4) +
+      coord_flip(xlim=c(-4.5,4.5), expand=F) +
+      geom_vline(xintercept = c(-min_lfc, min_lfc), linetype = "dashed", col = "dodgerblue")
+  p2 <- ggplot(dt) + 
+    aes(baseMean, log2FoldChange, col = padj <= ALPHA) + 
+    geom_point(alpha = 0.5, size=0.5) + 
+    scale_color_manual(values =c("darkgrey", "darkred")) + 
+    geom_hline(yintercept = c(-min_lfc, min_lfc), linetype = "dashed", col = "dodgerblue") +
+    guides(col = FALSE) + 
+    scale_x_log10(breaks=c(100,1000,10000,100000), label=comma) + 
+    scale_y_continuous(breaks=-4:4) +
+    coord_cartesian(ylim = c(-4.5,4.5), expand=F, xlim = c(10, 300000)) +
+    theme_classic()
+  return(plot_grid(p2, p1, align = "h", rel_widths = c(3,1)))
+}
+
+my_summary <- function(R, min_lfc = MINLFC, alpha = ALPHA) {
+  dt <- as.data.table(R)
+  n_sig = nrow(dt[padj < alpha,])
+  n_sig_lfc = nrow(dt[padj < alpha & abs(log2FoldChange)>MINLFC,])
+  summary(R, alpha = alpha)
+  cat(paste0("Total DE genes:              ", n_sig,"\n"))
+  cat(paste0("Total DE genes with FC>", round(2**(MINLFC),1), ": ", n_sig_lfc,"\n"))
+  return(NULL)
+}
+
+write_deseq_table <- function(R, file) {
+  dt <- cbind(gene_id = rownames(R), as.data.table(R)) 
+  write.table(dt, file, quote = F, row.names = F, sep = "\t")
+}
+```
+
+
+# Loading different data sets
+
+
+### F1 heads CyO/TM3
+
+```{r}
+x=c("F1_CyOTM3_heads_rep1.bal", "F1_CyOTM3_heads_rep1.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_heads_rep1",
+    "F1_CyOTM3_heads_rep1.vrg", "F1_CyOTM3_heads_rep1.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_heads_rep1",
+    "F1_CyOTM3_heads_rep2.bal", "F1_CyOTM3_heads_rep2.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_heads_rep2",
+    "F1_CyOTM3_heads_rep2.vrg", "F1_CyOTM3_heads_rep2.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_heads_rep2")
+D = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D) = n=c("Sample", "File", "Haplotype", "Replicate")
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ Haplotype)
+
+F1_CyOTM3_counts  <- counts(DE)
+F1_CyOTM3_colData <- colData(DE)
+```
+
+
+
+### N1 heads CyO
+
+```{r}
+x=c("N1_CyO_heads_rep1.bal", "N1_CyO_heads_rep1.htseq-count-rev.alt.txt", "balancer",   "N1_CyO_heads_rep1",
+    "N1_CyO_heads_rep1.vrg", "N1_CyO_heads_rep1.htseq-count-rev.ref.txt", "virginizer", "N1_CyO_heads_rep1",
+    "N1_CyO_heads_rep2.bal", "N1_CyO_heads_rep2.htseq-count-rev.alt.txt", "balancer",   "N1_CyO_heads_rep2",
+    "N1_CyO_heads_rep2.vrg", "N1_CyO_heads_rep2.htseq-count-rev.ref.txt", "virginizer", "N1_CyO_heads_rep2")
+D = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D) = n=c("Sample", "File", "Haplotype", "Replicate")
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ Haplotype)
+
+N1_CyO_counts  <- counts(DE)
+N1_CyO_colData <- colData(DE)
+```
+
+### N1 heads TM3
+
+```{r}
+x=c("N1_TM3_heads_rep1.bal", "N1_TM3_heads_rep1.htseq-count-rev.alt.txt", "balancer",   "N1_TM3_heads_rep1",
+    "N1_TM3_heads_rep1.vrg", "N1_TM3_heads_rep1.htseq-count-rev.ref.txt", "virginizer", "N1_TM3_heads_rep1",
+    "N1_TM3_heads_rep2.bal", "N1_TM3_heads_rep2.htseq-count-rev.alt.txt", "balancer",   "N1_TM3_heads_rep2",
+    "N1_TM3_heads_rep2.vrg", "N1_TM3_heads_rep2.htseq-count-rev.ref.txt", "virginizer", "N1_TM3_heads_rep2")
+D = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D) = n=c("Sample", "File", "Haplotype", "Replicate")
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ Haplotype)
+
+N1_TM3_counts  <- counts(DE)
+N1_TM3_colData <- colData(DE)
+```
+
+
+### N1 heads CyOTM3 pool
+
+```{r}
+x=c("N1_pool_heads_rep1.bal", "N1_pool_heads_rep1.htseq-count-rev.alt.txt", "balancer",   "N1_pool_heads_rep1",
+    "N1_pool_heads_rep1.vrg", "N1_pool_heads_rep1.htseq-count-rev.ref.txt", "virginizer", "N1_pool_heads_rep1",
+    "N1_pool_heads_rep2.bal", "N1_pool_heads_rep2.htseq-count-rev.alt.txt", "balancer",   "N1_pool_heads_rep2",
+    "N1_pool_heads_rep2.vrg", "N1_pool_heads_rep2.htseq-count-rev.ref.txt", "virginizer", "N1_pool_heads_rep2")
+D = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D) = n=c("Sample", "File", "Haplotype", "Replicate")
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ Haplotype)
+
+N1_pool_counts  <- counts(DE)
+N1_pool_colData <- colData(DE)
+```
+
+
+
+### F1 new heads CyO/TM3 (female only)
+
+```{r}
+x=c("F1_CyOTM3_headsFemale_rep1.bal", "F1_CyOTM3_headsFemale_rep1.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_headsFemale_rep1",
+    "F1_CyOTM3_headsFemale_rep1.vrg", "F1_CyOTM3_headsFemale_rep1.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_headsFemale_rep1",
+    "F1_CyOTM3_headsFemale_rep2.bal", "F1_CyOTM3_headsFemale_rep2.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_headsFemale_rep2",
+    "F1_CyOTM3_headsFemale_rep2.vrg", "F1_CyOTM3_headsFemale_rep2.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_headsFemale_rep2",
+    "F1_CyOTM3_headsFemale_rep3.bal", "F1_CyOTM3_headsFemale_rep3.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_headsFemale_rep3",
+    "F1_CyOTM3_headsFemale_rep3.vrg", "F1_CyOTM3_headsFemale_rep3.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_headsFemale_rep3",
+    "F1_CyOTM3_headsFemale_rep4.bal", "F1_CyOTM3_headsFemale_rep4.htseq-count-rev.alt.txt", "balancer",   "F1_CyOTM3_headsFemale_rep4",
+    "F1_CyOTM3_headsFemale_rep4.vrg", "F1_CyOTM3_headsFemale_rep4.htseq-count-rev.ref.txt", "virginizer", "F1_CyOTM3_headsFemale_rep4")
+D = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D) = n=c("Sample", "File", "Haplotype", "Replicate")
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ Haplotype)
+DE <- collapseReplicates(DE, c(1,2,1,2,3,4,3,4), D$Sample, renameCols = F)
+
+F1_female_counts  <- counts(DE)
+F1_female_colData <- colData(DE)
+F1_female_colData$runsCollapsed = NULL
+```
+
+```{r}
+merge_counts <- function(c1, c2) {
+  m = merge(c1, c2, by = 0)
+  rownames(m) = m$Row.names
+  m$Row.names = NULL
+  return (m)
+}
+```
+
+
+# DEseq comparisons
+
+
+
+## Only CyO  on chrom 2
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = N1_CyO_counts,
+                             colData   = N1_CyO_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr2[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.cyo.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.cyo.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.cyo.chrom2.standardFormat.txt")
+```
+
+
+
+
+## CyO and double balancer on chrom 2
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(N1_CyO_counts, 
+                                                F1_CyOTM3_counts),
+                             colData   = rbind(N1_CyO_colData, F1_CyOTM3_colData),
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr2[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.cyo_and_double.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.cyo_and_double.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.cyo_and_double.chrom2.standardFormat.txt")
+```
+
+
+
+
+## Only TM3  on chrom 3
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = N1_TM3_counts,
+                             colData   = N1_TM3_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr3[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.tm3.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.tm3.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.tm3.chrom3.standardFormat.txt")
+```
+
+
+
+
+## TM3 and double balancer on chrom 3
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(N1_TM3_counts, 
+                                                F1_CyOTM3_counts),
+                             colData   = rbind(N1_TM3_colData, F1_CyOTM3_colData),
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr3[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.tm3_and_double.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.tm3_and_double.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.tm3_and_double.chrom3.standardFormat.txt")
+```
+
+
+
+
+## Old and new F1 data together
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(F1_female_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(F1_female_colData, F1_CyOTM3_colData),
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[23][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.new_and_oldf1.chrom23.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.new_and_oldf1.chrom23.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.new_and_oldf1.chrom23.standardFormat.txt")
+```
+
+
+
+
+## Only **old** F1 data
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_CyOTM3_counts,
+                             colData   = F1_CyOTM3_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[23][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.oldf1.chrom23.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.oldf1.chrom23.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.oldf1.chrom23.standardFormat.txt")
+```
+
+
+## Only **old** F1 data - only chrom 2
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_CyOTM3_counts,
+                             colData   = F1_CyOTM3_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[2][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.oldf1.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.oldf1.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.oldf1.chrom2.standardFormat.txt")
+```
+
+
+
+## Only **old** F1 data - only chrom 3
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_CyOTM3_counts,
+                             colData   = F1_CyOTM3_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[3][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.oldf1.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.oldf1.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.oldf1.chrom3.standardFormat.txt")
+```
+
+
+
+## Only **new** F1 data (female heads)
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_female_counts,
+                             colData   = F1_female_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[23][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.newf1.chrom23.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.newf1.chrom23.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.newf1.chrom23.standardFormat.txt")
+```
+
+
+
+
+## Only **new** F1 data (female heads) - chrom 2
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_female_counts,
+                             colData   = F1_female_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[2][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.newf1.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.newf1.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.newf1.chrom2.standardFormat.txt")
+```
+
+
+## Only **new** F1 data (female heads) - chrom 3
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = F1_female_counts,
+                             colData   = F1_female_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[3][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.newf1.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.newf1.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.newf1.chrom3.standardFormat.txt")
+```
+
+
+
+
+
+## Only (old) N1 pool data (adult)
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = N1_pool_counts,
+                             colData   = N1_pool_colData,
+                             design = ~ Replicate + Haplotype)
+DE <- filter_genes(DE, chrom_regex = '^chr[23][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.oldN1pool.chrom23.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.oldN1pool.chrom23.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.oldN1pool.chrom23.standardFormat.txt")
+```
+
+
+
+
+# DESeq testing for other things than haplotype differences
+
+## Interaction term in old and new F1 data - only chrom **2**
+
+This should give us an idea on how many false significant genes we can expect from 
+biological noise. I do it separately on chrom 2 and 3 because I also do that for 
+the CyO vs. F1 and TM3 vs. F1 cases.
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(F1_female_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(data.frame(F1_female_colData, Type = "new"), 
+                                               data.frame(F1_CyOTM3_colData, Type = "old")),
+                             design = ~ Haplotype*Type)
+DE <- filter_genes(DE, chrom_regex = '^chr2[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.old_vs_new.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.old_vs_new.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.old_vs_new.chrom2.standardFormat.txt")
+```
+
+
+
+
+## Interaction term in old and new F1 data - only chrom **3**
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(F1_female_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(data.frame(F1_female_colData, Type = "new"), 
+                                               data.frame(F1_CyOTM3_colData, Type = "old")),
+                             design = ~ Haplotype*Type)
+DE <- filter_genes(DE, chrom_regex = '^chr3[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.old_vs_new.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.old_vs_new.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.old_vs_new.chrom3.standardFormat.txt")
+```
+
+
+
+## Interaction term in Cyo vs F1(old)
+
+This should give us an idea on how many genes on chr2 are affected by the presence of TM3
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(N1_CyO_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(data.frame(N1_CyO_colData,    Type = "CyO"), 
+                                               data.frame(F1_CyOTM3_colData, Type = "CyOTM3")),
+                             design = ~ Haplotype*Type)
+DE <- filter_genes(DE, chrom_regex = '^chr2[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.cyo_vs_double.chrom2.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.cyo_vs_double.chrom2.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.cyo_vs_double.chrom2.standardFormat.txt")
+```
+
+```{r}
+write.table(rownames(R[R$padj < 0.05,]),  file = "GO/cyo_int.txt", row.names=F, col.names=F, quote=FALSE)
+write.table(rownames(R[R$padj >= 0.05,]), file = "GO/cyo_int_control.txt", row.names=F, col.names=F, quote=FALSE)
+```
+
+
+
+
+## Interaction term TM3 vs F1(old)
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(N1_TM3_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(data.frame(N1_TM3_colData,    Type = "TM3"), 
+                                               data.frame(F1_CyOTM3_colData, Type = "CyOTM3")),
+                             design = ~ Haplotype*Type)
+DE <- filter_genes(DE, chrom_regex = '^chr3[LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.tm3_vs_double.chrom3.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.tm3_vs_double.chrom3.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.tm3_vs_double.chrom3.standardFormat.txt")
+```
+
+
+
+
+## Interaction term in  N1 pool data vs F1(old)
+
+```{r, message=FALSE}
+DE <- DESeqDataSetFromMatrix(countData = merge_counts(N1_pool_counts, 
+                                                      F1_CyOTM3_counts),
+                             colData   = rbind(data.frame(N1_pool_colData,    Type = "N1"), 
+                                               data.frame(F1_CyOTM3_colData, Type = "F1")),
+                             design = ~ Haplotype*Type)
+DE <- filter_genes(DE, chrom_regex = '^chr[23][LR]$')
+DE = DESeq(DE)
+R = results(DE)
+```
+
+```{r DE_control.n1_vs_oldf1.chrom23.fdr_correction, message=F, warning=F, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R = fdr_correction(R)
+my_summary(R, alpha = ALPHA)
+```
+
+```{r DE_control.n1_vs_oldf1.chrom23.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R)
+write_deseq_table(R, "DE_control.n1_vs_oldf1.chrom23.standardFormat.txt")
+```
+

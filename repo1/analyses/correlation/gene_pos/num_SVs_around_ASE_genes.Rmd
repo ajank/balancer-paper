@@ -1,0 +1,143 @@
+---
+title: "Number of SVs around ASE genes"
+date: "4/4/2017"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+> Compile with `Rscript -e 'rmarkdown::render("num_SVs_around_ASE_genes.Rmd", clean=F, output_format="all");'`
+
+```{r, message=FALSE, warning=FALSE}
+source("common.R")
+DEL_BAL = with(fread("../../tracks/deletions/min20.merged.bal-spec.bed"), GRanges(V1, IRanges(V2,V3)))
+DEL_BAL$type = "bal"
+DEL_VRG = with(fread("../../tracks/deletions/min20.merged.vrg-spec.bed"), GRanges(V1, IRanges(V2,V3)))
+DEL_VRG$type = "vrg"
+DEL     = sort(c(DEL_BAL, DEL_VRG))
+DUP     = with(fread("../../tracks/SVs/DUP.bed"), GRanges(V1, IRanges(V2,V3), type=substr(V4,1,3)))
+```
+
+# Number of deletions
+
+  * Take **expressed** genes (embryo)
+  * Divide into **ASE** and non-ASE (**control**) genes
+  * For each TSS, define an interval of a certain size upstream and downstream
+  * Count number of SVs in the intervals
+
+```{r}
+tss <- GENE_TSS[GENE_TSS$gene_id %in% ASE.embryo$gene_id,]
+mcols(tss) = merge(mcols(tss), ASE.embryo[,.(gene_id, log2FoldChange, padj)], by="gene_id")
+tss$ase = ifelse(tss$padj<0.05, ifelse(tss$log2FoldChange<0,"balancer down","balancer up"), "control")
+
+COUNTS = NULL
+for (size in c(100000, 200000)) {
+    dostr <- resize(tss, size, fix="start")
+    upstr <- resize(tss, size, fix="end")
+    for (haplotype in c("bal","vrg")) {
+        for (ase_type in c("control", "balancer down", "balancer up")) {
+             upstream   = countOverlaps(upstr[upstr$ase==ase_type,], DEL[DEL$type == haplotype])
+             downstream = countOverlaps(dostr[dostr$ase==ase_type,], DEL[DEL$type == haplotype,])
+             rows =  data.table(size     = paste(round(size/1000,0), "kb"),
+                            haplotype = haplotype,
+                            genes    = ase_type,
+                            where    = "upstream", 
+                            num_SVs = upstream)
+             COUNTS = rbind(COUNTS, rows)
+             rows =  data.table(size     = paste(round(size/1000,0), "kb"),
+                            haplotype = haplotype,
+                            genes    = ase_type,
+                            where    = "downstream", 
+                            num_SVs = downstream)
+             COUNTS = rbind(COUNTS, rows)
+        }
+    }
+}
+COUNTS <- COUNTS[, c("size","haplotype","genes","where") := .(
+                    factor(size, levels=c("100 kb", "200 kb"), ordered = T), 
+                    factor(paste(haplotype, "DELs")), 
+                    factor(genes, levels=c("balancer up", "control", "balancer down"), ordered = T), 
+                    factor(where))]
+```
+
+
+```{r num_DELs_around_ASE_genes, fig.width=10, fig.height=4, dev=c('png','pdf')}
+pvals = COUNTS[, .(`balancer up`   = wilcox.test(num_SVs[genes=="balancer up"], num_SVs[genes=="control"])$p.value,
+                       `balancer down` = wilcox.test(num_SVs[genes=="balancer down"], num_SVs[genes=="control"])$p.value),
+                   by=.(size, where, haplotype)]
+pvals = melt.data.table(pvals, c("size", "haplotype", "where"), variable.name = "genes", value.name = "p")
+pvals = pvals[, symbol := ifelse(p<5e-2, ifelse(p<1e-2, ifelse(p<1e-3, "***", "**"), "*"), "ns") ]
+pvals = merge(pvals, COUNTS[, .(num_SVs = max(num_SVs)), by=.(size)], by = c("size"))
+ggplot(COUNTS) + 
+  aes(haplotype, num_SVs, fill=genes) + 
+  geom_violin() + 
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+                 geom = "crossbar", width = 0.5, position = position_dodge(width=1)) +
+  ggtitle("Number of deletions around TSS (line=mean)") +
+  scale_y_continuous(expand = c(0.1,0), minor_breaks = 1:40) +
+  facet_wrap(~size+where, nrow=1, scales="free_y") +
+  geom_text(data = pvals, aes(label = symbol, y=1.1*num_SVs), vjust=0, size=4, position = position_dodge(width=1)) + 
+  theme_classic() +
+  my_theme2 +
+  theme(panel.grid.major.y  = element_line(size=0.1), 
+        panel.grid.minor.y  = element_line(size=0.1, colour = "grey"))
+```
+
+
+# Number of Duplications
+
+
+```{r}
+COUNTS = NULL
+for (size in c(1000000,2000000)) {
+    dostr <- resize(tss, size, fix="start")
+    upstr <- resize(tss, size, fix="end")
+    for (haplotype in c("bal","vrg")) {
+        for (ase_type in c("control", "balancer down", "balancer up")) {
+             upstream   = countOverlaps(upstr[upstr$ase==ase_type,], DUP[DUP$type == haplotype])
+             downstream = countOverlaps(dostr[dostr$ase==ase_type,], DUP[DUP$type == haplotype,])
+             rows =  data.table(size     = paste(round(size/1000000,0), "Mb"),
+                            haplotype = haplotype,
+                            genes    = ase_type,
+                            where    = "upstream", 
+                            num_SVs = upstream)
+             COUNTS = rbind(COUNTS, rows)
+             rows =  data.table(size     = paste(round(size/1000000,0), "Mb"),
+                            haplotype = haplotype,
+                            genes    = ase_type,
+                            where    = "downstream", 
+                            num_SVs = downstream)
+             COUNTS = rbind(COUNTS, rows)
+        }
+    }
+}
+COUNTS <- COUNTS[, c("size","haplotype","genes","where") := .(
+                    factor(size), 
+                    factor(paste(haplotype, "DUPs")), 
+                    factor(genes, levels=c("balancer up", "control", "balancer down"), ordered = T), 
+                    factor(where))]
+```
+
+Unfortunately for duplications the numbers are so low (`r length(DUP)` tandem DUPs) that we have to scale up to a megabase or more. Note that then there might be problems with intervals that reach out of bounds - I do not correct for such effects.
+
+```{r num_DUPs_around_ASE_genes, fig.width=10, fig.height=4, dev=c('png','pdf')}
+pvals = COUNTS[, .(`balancer up`   = wilcox.test(num_SVs[genes=="balancer up"], num_SVs[genes=="control"])$p.value,
+                   `balancer down` = wilcox.test(num_SVs[genes=="balancer down"], num_SVs[genes=="control"])$p.value),
+                   by=.(size, where, haplotype)]
+pvals = melt.data.table(pvals, c("size", "haplotype", "where"), variable.name = "genes", value.name = "p")
+pvals = pvals[, symbol := ifelse(p<5e-2, ifelse(p<1e-2, ifelse(p<1e-3, "***", "**"), "*"), "ns") ]
+pvals = merge(pvals, COUNTS[, .(num_SVs = max(num_SVs)), by=.(size)], by = c("size"))
+ggplot(COUNTS) + 
+  aes(haplotype, num_SVs, fill=genes) + 
+  geom_violin() +
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+                 geom = "crossbar", width = 0.5, position = position_dodge(width=1)) +
+  ggtitle("Number of duplications around TSS (line=mean)") +
+  scale_y_continuous(expand = c(0.1,0), minor_breaks = 1:40) +
+  facet_wrap(~size+where, nrow=1, scales="free_y") +
+  geom_text(data = pvals, aes(label = symbol, y=1.1*num_SVs), vjust=0, size=4, position = position_dodge(width=1)) + 
+  theme_classic() +
+  my_theme2 +
+  theme(panel.grid.major.y  = element_line(size=0.1), 
+        panel.grid.minor.y  = element_line(size=0.1, colour = "grey"))
+```

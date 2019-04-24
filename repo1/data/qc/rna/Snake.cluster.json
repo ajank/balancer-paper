@@ -1,0 +1,10 @@
+{
+  "__default__" :
+  {
+    "sbatch" : "sbatch -o logs/{rule}.%j.out -e logs/{rule}.%j.err",
+    "partition" : "htc",
+    "n" : "{threads}",
+    "mem" : "8G",
+    "time" : "01:00:00"
+  }
+}

@@ -1,0 +1,85 @@
+REF      = "/g/korbel/shared/datasets/refgenomes/fly/dm6.fa"
+INPUTDIR = "/g/korbel/shared/projects/drosophila_balancer/data/raw/hiC" 
+OUTDIR   = "/scratch/meiers/hiC"
+VCF      = "/g/korbel/shared/projects/drosophila_balancer/analyses/readSeparation/getVCF/variants.vcf.gz"
+S,       = glob_wildcards(INPUTDIR + "/{i}_1_sequence.txt.gz")
+
+rule all:
+	input:      expand("bam/{i}.merge.fix.CO.bam", i=S)
+
+rule map_se:
+	input:      INPUTDIR + "/{i}.txt.gz"
+	output:     OUTDIR + "/{i}.bam"
+	threads:    4
+	shell:      "bwa mem -t {threads} " + REF + " {input} | samtools-1.3.1 view -T " + REF + " -b - > {output}"
+
+rule namesort:
+	input:		"{x}.bam"
+	output:     "{x}.ns.bam"
+	threads:    4
+	shell:      "samtools-1.3.1 sort -@ {threads} -O bam -n {input} -o {wildcards.x}.ns.bam"
+
+rule add_flag_1:
+	input:      OUTDIR + "/{i}_1_sequence.bam"
+	output:     OUTDIR + "/{i}_1_sequence.addFlag.bam"
+	shell:      "python addFlag.py {input} 65 > {output}"
+
+rule add_flag_2:
+	input:      OUTDIR + "/{i}_2_sequence.bam"
+	output:     OUTDIR + "/{i}_2_sequence.addFlag.bam"
+	shell:      "python addFlag.py {input} 129 > {output}"
+
+rule merge_pairs:
+	input:      OUTDIR + "/{i}_1_sequence.addFlag.ns.bam",
+	            OUTDIR + "/{i}_2_sequence.addFlag.ns.bam"
+	output:     OUTDIR + "/{i}.merge.bam"
+	shell:      "samtools-1.3.1 merge -n {output} {input}"
+
+rule fixmate:
+	input:      OUTDIR + "/{i}.merge.bam"
+	output:     OUTDIR + "/{i}.merge.fix.bam"
+	shell:      "samtools-1.3.1 fixmate -p {input} {output}"
+
+rule separator:
+	input:      OUTDIR + "/{i}.merge.fix.bam"
+	output:     OUTDIR + "/{i}.merge.fix.CO.bam"
+	shell:      "python separator.py -b {input} -o {output} -v " + VCF
+
+rule move:
+    input:      OUTDIR + "/{i}.merge.fix.CO.bam"
+	output:     "bam/{i}.merge.fix.CO.bam"
+	shell:      "cp {input} {output}"
+
+
+rule clean:
+    shell:      """
+				outd=""" + OUTDIR + """
+	            confirm () {{
+				    # call with a prompt string or use a default
+				    read -r -p "${{1:-Are you sure? [y/N]}} " response
+				    case $response in
+				        [yY][eE][sS]|[yY]) 
+				            true
+				            ;;
+				        *)
+				            false
+				            ;;
+				    esac
+				}}
+	            
+				echo "Delete $outd/*_?_sequence.bam ?"
+				confirm && rm $outd/*_?_sequence.bam
+				echo "Delete $outd/*_?_sequence.addFlag.bam ?"
+				confirm && rm $outd/*_?_sequence.addFlag.bam
+				echo "Delete $outd/*_?_sequence.addFlag.ns.bam ?"
+				confirm && rm $outd/*_?_sequence.addFlag.ns.bam
+				echo "Delete $outd/*.merge.bam ?"
+				confirm && rm $outd/*.merge.bam
+				echo "Delete $outd/*.merge.fix.bam ?"
+				confirm && rm $outd/*.merge.fix.bam
+				echo "Delete $outd/*.merge.fix.CO.bam ?"
+				confirm && rm $outd/*.merge.fix.CO.bam
+
+				exit 0
+				"""
+

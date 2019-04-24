@@ -1,0 +1,24 @@
+configfile: "Snakeconf.json"
+
+DIR = "../../data/mapping/rna/bam"
+BAM, = glob_wildcards(DIR + "/{i}.sort.rg.bam")
+
+rule all:
+    input:      expand("plots/{i}.pdf", i = BAM)
+
+rule htseqcount:
+    input:      DIR + "/{i}.sort.rg.bam"
+    output:     "counts/{i}.htseq-count-rev.txt"
+    shell:      """
+                module load HTSeq
+                gff=/g/furlong/genome/D.melanogaster/Dm6/6.05/gff/dmel-all-filtered-r6.05.UCSC_names.genes.gff.gz
+                htseq-count -s reverse -f bam {input} $gff > {output}
+                """
+rule plot:
+    input:
+        count = "counts/{i}.htseq-count-rev.txt"
+    output:     "plots/{i}.pdf"
+    params:
+        read_len = lambda wildcards : config["read_len"][wildcards.i],
+        sample_name = lambda wildcards : wildcards.i
+    script:     "scripts/plot_expr.R"

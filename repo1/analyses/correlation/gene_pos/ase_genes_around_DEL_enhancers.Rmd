@@ -1,0 +1,153 @@
+---
+title: "Number of ASE genes around deleted enhancers"
+output: html_document
+---
+
+> Compile with `Rscript -e 'rmarkdown::render("ase_genes_around_DEL_enhancers.Rmd", clean=F, output_format="all");'`
+
+
+```{r, echo=F,message=FALSE, warning=FALSE}
+source("common.R")
+```
+
+
+# Input data
+
+The following variables are read by `common.R`:
+
+  * `ASE.adult`, `ASE.embryo`
+  * `EXONS`, `GENE_SPAN`
+
+### Read deletions and enhancers
+
+```{r}
+DEL_BAL = fread("../../tracks/deletions/min20.merged.bal-spec.bed")
+DEL_VRG = fread("../../tracks/deletions/min20.merged.vrg-spec.bed")
+ENH_CAD = fread("../../tracks/enhancer/CAD4_plus_vienna_dm6.core80percent.onlyChr2and3.bed")
+ENH_DHS = fread("../../tracks/enhancer/macs_summits_p50_slop50_merge25_clean.htseq.dm6.onlyChr2and3.bed")
+```
+
+
+### Get enhancers (DHS) that are deleted by at least 10%
+
+```{r}
+candidates = rbind(subsetByOverlapsDT(ENH_DHS, DEL_BAL, 0.1),
+                   subsetByOverlapsDT(ENH_DHS, DEL_VRG, 0.1))
+```
+
+### Random background intervals
+
+Sample random MACS summits from chromosome 2 and 3:
+
+```{r}
+rand_idx = sample(1:nrow(ENH_DHS), 1000, replace=T)
+ENH_DHS_randomGR = with(ENH_DHS[rand_idx], GRanges(V1, IRanges(V2,V3), seqinfo = genomeInfo))
+width(ENH_DHS_randomGR) = 1
+```
+
+
+
+# Counting genes in different distances around the deleted enhancers
+
+```{r}
+center_points <- with(candidates, GRanges(V1, IRanges( (V2+V3)/2, (V2+V3)/2+1), seqinfo = genomeInfo))
+test_regions <- GRanges(seqinfo = genomeInfo)
+sizes = c(1, 100, 1e3, 5e3, 10e3, 15e3, 25e3, 50e3, 1e5, 1.5e5, 2e5, 2.5e5, 3e5, 5e5)
+for (w in sizes) {
+    suppressWarnings(gr <- trim(center_points + w))
+    test_regions <- c(test_regions, gr)
+}
+test_genes <- as.data.table(get_genes_in_region(GENE_SPAN, test_regions))
+test_genes$start = rep(start(center_points), length(sizes))
+test_genes$end   = rep(end(center_points),   length(sizes))
+```
+
+For the background distribution I again kick out centromeric regions, just like in `ase_genes_around_bp.Rmd`:
+
+```{r}
+bg_gr <- ENH_DHS_randomGR
+bg_regions <- GRanges(seqinfo = genomeInfo)
+for (w in sizes) {
+    gr <- suppressWarnings(trim(bg_gr + w))
+    bg_regions <- c(bg_regions, gr)
+}
+bg_genes <- as.data.table(get_genes_in_region(GENE_SPAN, bg_regions))
+```
+
+Melt these gene counts into a printable format
+
+```{r}
+# test data:
+yy <- test_genes %>% 
+    group_by(width) %>% 
+    filter(n() >= 0.8 * length(center_points)) %>% 
+    ungroup %>% 
+  as.data.table %>%
+    melt.data.table(., 
+                    c("seqnames", "start", "width"),
+                    c(paste0(c("n_ase","n_tested"), ".ad"), 
+                      paste0(c("n_ase","n_tested"), ".em"))) %>%
+  group_by(width, variable) %>%
+    summarize(value = mean(value)) %>%
+  as.data.table
+
+
+# background data:
+q1 = function(x) quantile(x,0.025) # inner 95%
+q2 = function(x) quantile(x,0.25) # 1. quartile
+q3 = function(x) quantile(x,0.75) # 3. quartile
+q4 = function(x) quantile(x,0.975) # inner 95%
+
+xx <- melt.data.table(bg_genes, "width", c(paste0(c("n_ase","n_tested"), ".ad"), paste0(c("n_ase","n_tested"), ".em")))
+xx <- xx %>% group_by(width, variable) %>% summarize_each(funs(q1,q2,q3,q4,mean,length)) %>% as.data.table
+# Note that for some sizes we don't have all data points since the interval got trimmed -->
+# take all sizes for which we have at least 400 (max. 500) data points
+xx <- xx[length >= 400,]
+```
+
+Plot it:
+
+```{r genes_affected_vs_window_size, fig.width=10, fig.height=8, ev=c('png','pdf')}
+ggplot(xx) + 
+  geom_ribbon(aes(width, ymin = q1, ymax = q4), alpha=0.1) + 
+  geom_ribbon(aes(width, ymin = q2, ymax = q3), alpha=0.15) +
+  geom_line(data = yy, aes(width, value, col=paste(seqnames, start)), size=1, col="black") +
+  facet_wrap(~variable, scales="free") + 
+  scale_x_continuous(labels = comma) +
+  #scale_x_log10(labels = comma) +
+  xlab("window size") +
+  ylab("number of genes") +
+  theme_bw() + 
+  ggtitle(paste0("#ASE genes around deleted enhancers (n=",length(center_points),") vs. random background (n=",length(bg_gr),")"))
+```
+
+The black line is the mean of all breakpoints. Now again with focus on small sizes: 
+
+```{r genes_affected_vs_window_size_new2, fig.width=8, fig.height=8, dev=c('png','pdf')}
+ggplot(xx[width<220000,]) + 
+  geom_ribbon(aes(width, ymin = q1, ymax = q4), alpha=0.1) + 
+  geom_ribbon(aes(width, ymin = q2, ymax = q3), alpha=0.15) +
+  geom_line(aes(width, mean), size=1, col="black") +
+  geom_line(data = yy[width<220000,], aes(width, value, col=paste(seqnames, start)), size=1, col="red") +
+  facet_wrap(~variable, scales="free") + 
+  scale_x_continuous(labels = comma) +
+  #scale_x_log10(labels = comma) +  
+  xlab("window size") +
+  ylab("number of genes") +
+  theme_bw() + 
+  ggtitle(paste0("#ASE genes around deleted enhancers (n=",length(center_points),") vs. random background (n=",length(bg_gr),")"))
+```
+
+
+## Within 25 kb
+
+Since there seems to be a signal within 25kb away from deleted enhancers, let's look at the numbers again:
+
+```{r}
+d = rbind(cbind(case="observed", test_genes[width==20002,.(n_tested.ad, n_tested.em, n_ase.em, n_ase.ad)]),
+          cbind(case="random",bg_genes[width==20001,.(n_tested.ad, n_tested.em, n_ase.em, n_ase.ad)]))
+d = melt.data.table(d, id.vars = "case")
+d[, c("variable", "sample") := tstrsplit(variable, ".", fixed = TRUE)]
+ggplot(d) + aes(value, y=..density.., fill=case) + geom_histogram(position="dodge", binwidth=1,alpha = 0.3) + facet_wrap(sample ~ variable, scales="free")
+ggplot(d) + aes(case, y=value, fill=case) + geom_boxplot() + facet_wrap(sample ~ variable, scales="free")
+```

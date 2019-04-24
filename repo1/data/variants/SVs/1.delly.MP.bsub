@@ -1,0 +1,24 @@
+#!/bin/bash
+
+#BSUB -J delly[1-5]
+#BSUB -n 2
+#BSUB -M 8000
+#BSUB -R "rusage[mem=8000]"
+
+delly=/g/korbel/meiers/tools/delly/delly_v0.7.1_parallel_linux_x86_64bit 
+
+modes=(dummy DEL DUP INV TRA INS)
+mode=${modes[$LSB_JOBINDEX]}
+
+f1=../../mapping/mate/hiSeq.matePair.CROSS.nextClip.merge.sort.bam
+f2=../../mapping/mate/hiSeq.matePair.VRG.nextClip.merge.sort.bam
+
+export OMP_NUM_THREADS=2
+
+$delly 	-x exclude.chr.txt \
+       	-t $mode \
+		-g /g/korbel/shared/datasets/refgenomes/fly/dm6.fa \
+		-o MP.delly071.$mode.vcf \
+		$f1 $f2
+
+bgzip-1.2.1 MP.delly071.$mode.vcf

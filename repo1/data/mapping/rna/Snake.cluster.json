@@ -1,0 +1,20 @@
+{
+  "__default__" :
+  {
+    "sbatch" : "sbatch -o logs/{rule}.%j.out -e logs/{rule}.%j.err",
+    "partition" : "htc",
+    "n" : "{threads}",
+    "mem" : "8G",
+    "time" : "01:00:00"
+  },
+  "map_star" :
+  {
+    "mem" : "36G",
+    "partition" : "1week",
+    "time" : "5-00:00:00"
+  },
+  "add_RG" :
+  {
+    "mem" : "24G"
+  }
+}

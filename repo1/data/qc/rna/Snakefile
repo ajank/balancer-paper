@@ -1,0 +1,16 @@
+SAMPLES ,= glob_wildcards("fastq/{sample}.fq.gz")
+
+rule all:
+    input:      expand("fastqc/{sample}_fastqc.html", sample = SAMPLES)
+
+rule fastqc:
+    input:
+        "fastq/{sample}.fq.gz"
+    output:
+        "fastqc/{sample}_fastqc.html"
+    shell:
+        """
+        module load FastQC/0.11.5-Java-1.8.0_112
+        fastqc -o fastqc {input}
+        """
+

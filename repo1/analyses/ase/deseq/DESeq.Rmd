@@ -1,0 +1,267 @@
+---
+title: "ASE DEseq"
+output: html_document
+---
+
+> Compile with `Rscript -e 'rmarkdown::render("DESeq.Rmd", clean=F, output_format="all");'`
+
+**Last update: 26 Sep 2017 using new GFF file**
+
+---
+
+Common functions:
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+source("common.R")
+library(data.table)
+library(cowplot)
+library(scales)
+
+COVPERSAMPLE = 50
+ALPHA = 0.05
+MINLFC = log2(1.5)
+
+
+filter_genes <- function(DE, thr_per_sample = COVPERSAMPLE, chrom_regex = 'chr[32][LR]') {
+  DE <- DE[ rownames(DE) %in% filter(gff, grepl(chrom_regex, chrom))$gene_id, ]
+  DE <- DE[ rowSums(counts(DE)) >= ncol(DE)/2*thr_per_sample, ]
+  return (DE)
+}
+
+fdr_correction <- function(R) {
+  corr = fdrtool(R$stat, plot = F)
+  p <- rbind(data.frame(p = R$padj,    t = "before correction"),
+      data.frame(p = corr$pval, t = "after correction")) %>%
+    ggplot() + aes(p) + theme_minimal() +
+      geom_histogram(binwidth=0.1) + scale_x_log10() +
+      facet_grid(.~t, scales="free")
+  #print(p)
+  R$pvalue = corr$pval
+  R$padj = corr$qval
+  return(R)
+}
+
+plot_MA <- function(R, min_lfc = MINLFC) {
+  dt <- cbind(as.data.table(R), gene_id = rownames(R))
+  p1 <- ggplot(dt[padj <= ALPHA, ]) + 
+      aes(log2FoldChange) + 
+      geom_histogram(binwidth=0.1) +
+      theme_classic() + 
+      scale_x_continuous(breaks=-4:4) +
+      coord_flip(xlim=c(-4.5,4.5), expand=F) +
+      geom_vline(xintercept = c(-min_lfc, min_lfc), linetype = "dashed", col = "dodgerblue")
+  p2 <- ggplot(dt) + 
+    aes(baseMean, log2FoldChange, col = padj <= ALPHA) + 
+    geom_point(alpha = 0.5, size=0.5) + 
+    scale_color_manual(values =c("darkgrey", "darkred")) + 
+    geom_hline(yintercept = c(-min_lfc, min_lfc), linetype = "dashed", col = "dodgerblue") +
+    guides(col = FALSE) + 
+    scale_x_log10(breaks=c(100,1000,10000,100000), label=comma) + 
+    scale_y_continuous(breaks=-4:4) +
+    coord_cartesian(ylim = c(-4.5,4.5), expand=F, xlim = c(10, 300000)) +
+    theme_classic()
+  return(plot_grid(p2, p1, align = "h", rel_widths = c(3,1)))
+}
+
+my_summary <- function(R, min_lfc = MINLFC, alpha = ALPHA) {
+  dt <- as.data.table(R)
+  n_sig = nrow(dt[padj<ALPHA,])
+  n_sig_lfc = nrow(dt[padj<ALPHA & abs(log2FoldChange)>MINLFC,])
+  summary(R, alpha = alpha)
+  cat(paste0("Total DE genes:              ", n_sig,"\n"))
+  cat(paste0("Total DE genes with FC>", round(2**(MINLFC),1), ": ", n_sig_lfc,"\n"))
+  return(NULL)
+}
+
+write_deseq_table <- function(R, file) {
+  dt <- cbind(gene_id = rownames(R), as.data.table(R)) 
+  write.table(dt, file, quote = F, row.names = F, sep = "\t")
+}
+```
+
+
+
+
+# Embryo data (4 replicates)
+
+```{r}
+n=c("SampleName",              "File",                                         "Haplotype",  "Replicate")
+x=c("N1_6.8_father.vrg_1_BAL", "N1_pool_6-8h_rep1.htseq-count-rev.alt.txt",    "balancer",   "1",
+    "N1_6.8_father.vrg_1_VRG", "N1_pool_6-8h_rep1.htseq-count-rev.ref.txt",    "virginizer", "1",
+    "N1_6.8_father.vrg_2_BAL", "N1_pool_6-8h_rep2.htseq-count-rev.alt.txt",    "balancer",   "2",
+    "N1_6.8_father.vrg_2_VRG", "N1_pool_6-8h_rep2.htseq-count-rev.ref.txt",    "virginizer", "2",
+    "N1_6.8_mother.vrg_1_BAL", "N1sex_pool_6-8h_rep1.htseq-count-rev.alt.txt", "balancer",   "3",
+    "N1_6.8_mother.vrg_1_VRG", "N1sex_pool_6-8h_rep1.htseq-count-rev.ref.txt", "virginizer", "3",
+    "N1_6.8_mother.vrg_2_BAL", "N1sex_pool_6-8h_rep2.htseq-count-rev.alt.txt", "balancer",   "4",
+    "N1_6.8_mother.vrg_2_VRG", "N1sex_pool_6-8h_rep2.htseq-count-rev.ref.txt", "virginizer", "4" )
+D_e = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D_e) = n
+D_e$File = paste("../../readSeparation/counts", D_e$File, sep="/")
+```
+
+```{r, message=FALSE}
+DE_e <- DESeqDataSetFromHTSeqCount(D_e, design = ~ Replicate + Haplotype)
+DE_e <- filter_genes(DE_e)
+A_e = DESeq(DE_e)
+R_e = results(A_e, contrast=c("Haplotype", "balancer", "virginizer"))
+```
+
+```{r embryo.fdr_correction, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R_e = fdr_correction(R_e)
+my_summary(R_e, alpha = ALPHA)
+```
+
+```{r embryo.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R_e)
+```
+
+```{r}
+write_deseq_table(R_e, file = "DESeq.N1_6-8h.standardFormat.txt")
+```
+
+Let's check the chromosomal distribution (in %):
+
+```{r}
+xx = merge(data.table(as.data.table(R_e), gene_id = rownames(R_e)), CHROM, by="gene_id")
+round(table(xx[padj<0.05,]$chrom) / table(xx$chrom), 4)*100
+xx = xx[, .(total=.N, ase=sum(padj<0.05),ratio=sum(padj<0.05)/.N), by=chrom]
+xx
+```
+
+
+# Adult data (2 replicates, F1)
+
+```{r}
+n=c("Sample",   "File",                                         "Haplotype",     "Replicate")
+x=c(#"N1_11_1_BAL", "N1_pool_heads_rep1.htseq-count-rev.alt.txt",   "balancer",   1,
+    #"N1_11_1_VRG", "N1_pool_heads_rep1.htseq-count-rev.ref.txt",   "virginizer", 1,
+    #"N1_11_2_BAL", "N1_pool_heads_rep2.htseq-count-rev.alt.txt",   "balancer",   2,
+    #"N1_11_2_VRG", "N1_pool_heads_rep2.htseq-count-rev.ref.txt",   "virginizer", 2,
+    "F1_44_1_BAL", "F1_CyOTM3_heads_rep1.htseq-count-rev.alt.txt", "balancer",   3,
+    "F1_44_1_VRG", "F1_CyOTM3_heads_rep1.htseq-count-rev.ref.txt", "virginizer", 3,
+    "F1_44_2_BAL", "F1_CyOTM3_heads_rep2.htseq-count-rev.alt.txt", "balancer",   4,
+    "F1_44_2_VRG", "F1_CyOTM3_heads_rep2.htseq-count-rev.ref.txt", "virginizer", 4)
+D_a = data.frame(matrix(x, byrow=T,ncol=4))
+colnames(D_a) = n
+D_a$File = paste("../../readSeparation/counts", D_a$File, sep="/")
+```
+
+```{r, message=FALSE}
+DE_a <- DESeqDataSetFromHTSeqCount(D_a, design = ~ Replicate + Haplotype)
+DE_a <- filter_genes(DE_a)
+A_a = DESeq(DE_a)
+R_a = results(A_a, contrast=c("Haplotype", "balancer", "virginizer"))
+```
+
+```{r adult.fdr_correction, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R_a = fdr_correction(R_a)
+my_summary(R_a, alpha = ALPHA)
+```
+
+```{r adult.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R_a)
+```
+
+```{r}
+write_deseq_table(R_a, file = "DESeq.F1_heads.standardFormat.txt")
+```
+
+Let's check the chromosomal distribution (in %):
+
+```{r}
+xx = merge(data.table(as.data.table(R_a), gene_id = rownames(R_a)), CHROM, by="gene_id")
+round(table(xx[padj<0.05,]$chrom) / table(xx$chrom), 4)*100
+xx = xx[, .(total=.N, ase=sum(padj<0.05),ratio=sum(padj<0.05)/.N), by=chrom]
+xx
+```
+
+
+
+### Overlap between adult and embryonic results:
+
+```{r}
+all <- rbind(cbind(as.data.table(R_e), gene_id=rownames(R_e)),
+      cbind(as.data.table(R_a), gene_id=rownames(R_a)))
+t <- table(all$gene_id)
+message(paste0("Tested in both: ", dim(t[t>1]), "/", dim(t)))
+ase <- all[padj<0.05,]
+t <- table(ase$gene_id)
+message(paste0("Significant in both: ", dim(t[t>1]), "/", dim(t)))
+```
+
+
+
+
+
+# New Adult data (2 replicates, female F1)
+
+> **Update**: include chromosome X in the ASE analysis!
+
+This was done to replace the analysis "only X chromosome" with new, proper RNA data
+from only females!
+
+```{r}
+n=c("Sample",       "File",                                               "Haplotype",  "Replicate")
+x=c("F1_fem_1_BAL", "F1_CyOTM3_headsFemale_rep1.htseq-count-rev.alt.txt", "balancer",   1,
+    "F1_fem_1_VRG", "F1_CyOTM3_headsFemale_rep1.htseq-count-rev.ref.txt", "virginizer", 1,
+    "F1_fem_2_BAL", "F1_CyOTM3_headsFemale_rep2.htseq-count-rev.alt.txt", "balancer",   1,
+    "F1_fem_2_VRG", "F1_CyOTM3_headsFemale_rep2.htseq-count-rev.ref.txt", "virginizer", 1,
+    "F1_fem_3_BAL", "F1_CyOTM3_headsFemale_rep3.htseq-count-rev.alt.txt", "balancer",   2,
+    "F1_fem_3_VRG", "F1_CyOTM3_headsFemale_rep3.htseq-count-rev.ref.txt", "virginizer", 2,
+    "F1_fem_4_BAL", "F1_CyOTM3_headsFemale_rep4.htseq-count-rev.alt.txt", "balancer",   2,
+    "F1_fem_4_VRG", "F1_CyOTM3_headsFemale_rep4.htseq-count-rev.ref.txt", "virginizer", 2)
+D_f = data.frame(matrix(x, byrow=T, ncol=4))
+colnames(D_f) = n
+D_f$File = paste("../../readSeparation/counts", D_f$File, sep="/")
+```
+
+Note that I collapse technical replicates here:
+
+```{r, message=FALSE}
+DE_f <- DESeqDataSetFromHTSeqCount(D_f, design = ~ Replicate + Haplotype)
+DE_f <- collapseReplicates(DE_f, c(1,2,1,2,3,4,3,4), D_f$Sample, renameCols = F)
+DE_f <- filter_genes(DE_f, chrom_regex = 'chr[23X][LR]?$')
+A_f = DESeq(DE_f)
+R_f = results(A_f, contrast=c("Haplotype", "balancer", "virginizer"))
+```
+
+```{r adult_female.fdr_correction, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+R_f = fdr_correction(R_f)
+my_summary(R_f, alpha = ALPHA)
+```
+
+```{r adult_female.ma_plot, message=FALSE, fig.width=8, fig.height=5, dev=c('png','pdf')}
+plot_MA(R_f)
+```
+
+```{r}
+write_deseq_table(R_f, file = "DESeq.F1_headsFemale.standardFormat.txt")
+```
+
+Again quickly check the chromosomal distribution
+```{r}
+xx = merge(data.table(as.data.table(R_f), gene_id = rownames(R_f)), CHROM, by="gene_id")
+xx = xx[, .(total=.N, ase=sum(padj<0.05),ratio=sum(padj<0.05)/.N), by=chrom]
+xx
+xx = xx[, factX := factor(chrom=="chrX", levels=c(T,F), labels=c("chrX","balanced"))][]
+xx = xx[, .(ase = sum(ase), n_ase = sum(total) - sum(ase)), by=factX]
+fisher.test(as.matrix(xx[, .(ase,n_ase)]))
+```
+
+
+
+### Overlap between new and old adult F1 data:
+
+```{r}
+allF1 <- rbind(cbind(as.data.table(R_a), gene_id=rownames(R_a)),
+               cbind(as.data.table(R_f), gene_id=rownames(R_f)))
+t <- table(allF1$gene_id)
+message(paste0("Tested in both: ", dim(t[t>1]), "/", dim(t)))
+t <- table(allF1[padj<0.05,]$gene_id)
+message(paste0("Significant in both: ", dim(t[t>1]), "/", dim(t)))
+```
+
+
+
+
+

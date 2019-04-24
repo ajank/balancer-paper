@@ -1,0 +1,399 @@
+configfile: "Snakeconfig.json"
+
+
+TARGETS = ["fig1b_number_of_SNVs/GT_stats.pdf",
+    "fig1d_SV_genotypes/SV_genotypes.pdf",
+    "fig1e_SV_sizes/SV_size.pdf",
+    "supplfig_SV_genotype_per_chrom/suppl_SV_genotypes.pdf",
+    "supplfig_SV_sizes/suppl_SV_size_by_chrom.pdf",
+    "fig1c_circos_plot/circos.svg",
+    "fig2a_DHS_deletion_overlap/DHS_ovlp.pdf",
+    "supplfig_DHS_dataset/suppl_DHS_sizes.pdf",
+    "supplfig_DHS_overlap/suppl_DHS_exon_ovlp.txt",
+    "supplfig_DHS_overlap/suppl_DHS_exon_ovlp.pdf",
+    "fig2b_DHS_deletion_overlap_simulated/DHS_ovlp_downscaled.pdf",
+    "fig3c_dist_to_bps/dist_of_ase_genes_to_bps.pdf",
+    "fig3c_dist_to_bps/dist_of_ase_genes_to_bps2.pdf",
+    "fig3a_DESeq/DESeq.pdf",
+    "fig3b_ASE_gene_distance/ASE_gene_distance.pdf",
+    "fig3c_gene_manhattan/manhattan.pdf",
+    "supplfig_DESeq_adults/suppl_DESeq_adult.pdf",
+    "supplfig_ASE_histograms/RNA_ASE_histogram_F1_CyOTM3_headsFemale.pdf",
+    "supplfig_ASE_histograms/RNA_ASE_histogram_N1_pool_6-8h.pdf",
+    "supplfig_ASE_histograms/RNA_ASE_histogram_N1sex_pool_6-8h.pdf",
+    "supplfig_ASE_histograms/RNA_ASE_histogram_F1_CyOTM3_headsFemale.pdf",
+    "supplfig_ASE_histograms/RNA_ASE_histogram_N1_pool_4-8h.pdf",
+    "other/ASE_histograms.pdf",
+    "other/DESeq2.N1_6-8h.pdf",
+    "other/DESeq2.F1_headsFemale.pdf",
+    "suppltab_RNA/RNA_table.txt",
+    "supplfig_ASE_chrX/ASE_chrX_numbers.pdf",
+    "supplfig_ASE_chrX/ASE_chrX_qqplot.pdf",
+    "supplfig_ASE_control/ASE_correlation.pdf",
+    "other/ASE_single_balancer_control.pdf",
+    "supplfig_ASE_cnv_overlap/ASE_cnv_overlap.pdf",
+    "fig5a_sign_capC_interactions/diff_interactions_boxplot.pdf",
+    "other/SVsize.DEL.pdf",
+    "other/SVsize.DUP.pdf"]
+
+
+rule all:
+    input: expand("{x}", x = TARGETS)
+
+rule clean:
+    params: targets = TARGETS
+    run:
+        for x in params.targets:
+            if os.path.isfile(x):
+                print("removing", x)
+                os.remove(x)
+
+
+
+################################################################################
+### SVs and SNVs
+################################################################################
+
+rule fig1b_number_of_SNVs:
+    input:
+        config["path"] + "data/variants/SNVs2/wgs.freebayes-k.filter.norm.decomposed.onlySNPs.vcf.gz"
+    output:
+        pdf = "fig1b_number_of_SNVs/GT_stats.pdf",
+        stats = "fig1b_number_of_SNVs/GT_stats.txt"
+    shell:
+        """
+        zcat {input} \
+        | awk  '$0!~/^#/ && $1~/^chr[23X][LR]?$/ {{
+            x = substr($10,1,3);
+            y = substr($11,1,3);
+            count[ substr($1,1,4) "__" x "__" y]++;
+            }}
+          END {{
+            for(x in count) {{
+                split(x,tmp,"__");
+                print tmp[1] "\t" tmp[2] "__" tmp[3] "\t" count[x];
+            }}
+          }}' > fig1b_number_of_SNVs/GT_stats.txt
+        Rscript fig1b_number_of_SNVs/write_table.R fig1b_number_of_SNVs/GT_stats.txt {output.pdf}
+        """
+
+rule fig1d_SV_genotypes:
+    input:
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed",
+        snvs = "fig1b_number_of_SNVs/GT_stats.txt"
+    output:
+        "fig1d_SV_genotypes/SV_genotypes.pdf"
+    script:
+        "fig1d_SV_genotypes/plot.R"
+
+rule supplfig_SV_genotype_per_chrom:
+    input:
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed",
+        snvs = "fig1b_number_of_SNVs/GT_stats.txt"
+    output:
+        "supplfig_SV_genotype_per_chrom/suppl_SV_genotypes.pdf"
+    script:
+        "supplfig_SV_genotype_per_chrom/plot_by_chrom.R"
+
+rule fig1e_SV_sizes:
+    input:
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed"
+    output:
+        "fig1e_SV_sizes/SV_size.pdf"
+    script:
+        "fig1e_SV_sizes/plot.R"
+
+rule supplfig_SV_sizes:
+    input:
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed"
+    output:
+        "supplfig_SV_sizes/suppl_SV_size_by_chrom.pdf"
+    script:
+        "supplfig_SV_sizes/plot.R"
+
+rule other_SV_sizes:
+    input:
+        config["path"] + "analyses/SV_filter/FINAL/{SV}.final.bed"
+    output:
+        "other/SVsize.{SV}.pdf"
+    script:
+        "other/SVsize.R"
+
+
+rule fig1c_circos_plot:
+    input:
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed",
+        tra  = "fig1c_circos_plot/translocations.txt"
+    output:
+        "fig1c_circos_plot/circos.svg"
+    shell:
+        """
+        #awk 'NR>1 {{OFS="\t"; print $1, int(($2+$3)/2), $4, int(($5+$6)/2)}}' {input.tra} > fig1c_circos_plot/input.tra.txt
+        awk '$3-$2 > 99' {input.dels} > fig1c_circos_plot/input.del.txt
+
+        echo "ONLY DELETIONS > 99bp are shown!!"
+
+        # Make Circos available:
+        module load Perl libgd
+        export PERL5LIB=/home/meiers/perl5/lib/perl5
+        eval "$(perl -I$HOME/perl5/lib/perl5 -Mlocal::lib)"
+
+        # Run circos
+        fig1c_circos_plot/run_circos.sh \
+            fig1c_circos_plot/input.del.txt \
+            {input.dups} \
+            {input.tra} \
+            fig1c_circos_plot/dm6.karyotype.txt \
+            {output}
+        """
+
+
+
+
+################################################################################
+### DHS and overlap
+################################################################################
+
+rule fig2a_DHS_deletion_overlap_all:
+    input:
+        peaks  = config["path"] + "analyses/tracks/enhancer/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed",
+        dels   = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        genome = config["path"] + "analyses/correlation/DHSpeak_selection/genome.chr23.fai"
+    output:
+        "fig2a_DHS_deletion_overlap/DHS_ovlp.pdf"
+    script:
+        "fig2a_DHS_deletion_overlap/DHS_overlap.R"
+
+rule supplfig_DHS_overlap_data:
+    input:
+        exons  = config["path"] + "analyses/SNV_annotation/reformatted.gff",
+        dels   = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        genome = config["path"] + "analyses/correlation/DHSpeak_selection/genome.chr23.fai"
+    output:
+        "supplfig_DHS_overlap/suppl_DHS_exon_ovlp.txt"
+    shell:
+        """
+        # Preparing exons
+        EXONS=$(mktemp --suffix ".bed")
+        awk '$6~/CDS/ {{print $1 "\t" $2 "\t" $3}}' {input.exons} > $EXONS
+
+        # Preparing deletion call sets
+        DEL_bal=$(mktemp --suffix ".bed")
+        DEL_vrg=$(mktemp --suffix ".bed")
+        awk '$4~/^0\/1_0\/0/' {input.dels} > $DEL_bal
+        awk '$4~/^0\/1_1\/1/' {input.dels} > $DEL_vrg
+
+        echo "Calculating overlap with EXONS - 1000x (very slow)"
+        scripts/calc_ovlp.sh $EXONS $DEL_bal 0.001 {input.genome} | awk '{{print $0 "\tbalancer"}}' > {output}
+        scripts/calc_ovlp.sh $EXONS $DEL_vrg 0.001 {input.genome} | awk '{{print $0 "\twild type"}}' >> {output}
+        """
+
+rule fig2b_DHS_deletion_overlap_simulated:
+    input:
+        config["path"] + "analyses/correlation/DHSpeak_selection/test_more_advanced.data.txt"
+    output:
+        "fig2b_DHS_deletion_overlap_simulated/DHS_ovlp_downscaled.pdf"
+    script:
+        "fig2b_DHS_deletion_overlap_simulated/DHS_ovlp_downscaled.R"
+
+
+rule supplfig_DHS_overlap:
+    input:
+        "supplfig_DHS_overlap/suppl_DHS_exon_ovlp.txt"
+    output:
+        "supplfig_DHS_overlap/suppl_DHS_exon_ovlp.pdf"
+    script:
+        "supplfig_DHS_overlap/plot_ovlp.R"
+
+rule supplfig_DHS_dataset:
+    input:
+        peaks = config["path"] + "analyses/tracks/enhancer/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed"
+    output:
+        "supplfig_DHS_dataset/suppl_DHS_sizes.pdf"
+    script:
+        "supplfig_DHS_dataset/DHS_sizes.R"
+
+
+rule fig3c_dist_to_bps:
+    input:
+        config["path"] + "analyses/correlation/gene_pos/ase_genes_around_bp.html"
+    output:
+        "fig3c_dist_to_bps/dist_of_ase_genes_to_bps.pdf"
+    shell:
+        """
+        (cd $(dirname {input}) && Rscript -e 'rmarkdown::render("ase_genes_around_bp.Rmd", clean=F, output_format="all");')
+        cp $(dirname {input})/ase_genes_around_bp_files/figure-html/r_ase_vs_window_size_new-1.pdf {output}
+        """
+
+rule fig3c_dist_to_bps2:
+    input:
+        config["path"] + "analyses/correlation/gene_pos/ase_genes_around_bp.html"
+    output:
+        "fig3c_dist_to_bps/dist_of_ase_genes_to_bps2.pdf"
+    shell:
+        "cp $(dirname {input})/ase_genes_around_bp_files/figure-html/r_ase_vs_n_tested-1.pdf {output}"
+
+rule fig3c_run_Rmd:
+    input:
+        config["path"] + "analyses/correlation/gene_pos/ase_genes_around_bp.Rmd"
+    output:
+        config["path"] + "analyses/correlation/gene_pos/ase_genes_around_bp.html"
+    shell:
+        """
+        cd $(dirname {input}) && pwd && Rscript -e 'rmarkdown::render("ase_genes_around_bp.Rmd", clean=F, output_format="all");'
+        """
+
+
+################################################################################
+### DESeq
+################################################################################
+
+rule fig3a_DESeq:
+    input:
+        deseq = config["path"] + "analyses/ase/deseq/DESeq.N1_6-8h.standardFormat.txt"
+    output:
+        "fig3a_DESeq/DESeq.pdf"
+    script:
+        "fig3a_DESeq/DESeq_plot.R"
+
+rule other_DESeq:
+    input:
+        deseq = config["path"] + "analyses/ase/deseq/DESeq.{sample}.standardFormat.txt"
+    output:
+        "other/DESeq2.{sample}.pdf"
+    script:
+        "other/DESeq_plot.R"
+
+rule supplfig_DESeq_adults:
+    input:
+        deseq = config["path"] + "analyses/ase/deseq/DESeq.F1_headsFemale.standardFormat.txt"
+    output:
+        "supplfig_DESeq_adults/suppl_DESeq_adult.pdf"
+    script:
+        "supplfig_DESeq_adults/DESeq_plot.R"
+
+rule supplfig_ASE_histograms:
+    input:
+        gff  = config["path"] + "analyses/SNV_annotation/reformatted.gff",
+        bal1 = config["path"] + "analyses/readSeparation/counts/{sample}_rep1.alt.htseq-count-rev.txt",
+        vrg1 = config["path"] + "analyses/readSeparation/counts/{sample}_rep1.ref.htseq-count-rev.txt",
+        bal2 = config["path"] + "analyses/readSeparation/counts/{sample}_rep2.alt.htseq-count-rev.txt",
+        vrg2 = config["path"] + "analyses/readSeparation/counts/{sample}_rep2.ref.htseq-count-rev.txt"
+    params:
+        title = lambda wildcards: config["ASE_titles"][wildcards.sample]
+    output:
+        hist   = "supplfig_ASE_histograms/RNA_ASE_histogram_{sample}.pdf",
+        chroms = "supplfig_ASE_histograms/RNA_ASE_histogram_{sample}_per_chrom.pdf",
+    script:
+        "supplfig_ASE_histograms/plot_RNA_ASE_histograms.R"
+
+rule suppltab_RNA:
+    input:
+        expand(config["path"] + "analyses/readSeparation/rna/{sample}/numbers.txt", sample = config["rna_samples"])
+    output:
+        "suppltab_RNA/RNA_table.txt"
+    script:
+        "suppltab_RNA/count_phased_reads.R"
+
+rule supplfig_ASE_chrX:
+    input:
+        gff  = config["path"] + "analyses/SNV_annotation/reformatted.gff",
+        f1 = config["path"] + "analyses/ase/deseq/DESeq.F1_headsFemale.standardFormat.txt"
+    output:
+        numbers = "supplfig_ASE_chrX/ASE_chrX_numbers.pdf",
+        qqplot  = "supplfig_ASE_chrX/ASE_chrX_qqplot.pdf"
+    script:
+        "supplfig_ASE_chrX/ASE_chrX_plot.R"
+
+rule supplfig_ASE_control:
+    input:
+        cyo_chr2   = config["path"] + "analyses/ase/deseq/DE_control.cyo.chrom2.standardFormat.txt",
+        tm3_chr3   = config["path"] + "analyses/ase/deseq/DE_control.tm3.chrom3.standardFormat.txt",
+        old_chr2   = config["path"] + "analyses/ase/deseq/DE_control.oldf1.chrom2.standardFormat.txt",
+        old_chr3   = config["path"] + "analyses/ase/deseq/DE_control.oldf1.chrom3.standardFormat.txt",
+        new_chr2   = config["path"] + "analyses/ase/deseq/DE_control.newf1.chrom2.standardFormat.txt",
+        new_chr3   = config["path"] + "analyses/ase/deseq/DE_control.newf1.chrom3.standardFormat.txt",
+        intf1_chr2 = config["path"] + "analyses/ase/deseq/DE_control.old_vs_new.chrom2.standardFormat.txt",
+        intf1_chr3 = config["path"] + "analyses/ase/deseq/DE_control.old_vs_new.chrom3.standardFormat.txt",
+        intn1_chr2 = config["path"] + "analyses/ase/deseq/DE_control.cyo_vs_double.chrom2.standardFormat.txt",
+        intn1_chr3 = config["path"] + "analyses/ase/deseq/DE_control.tm3_vs_double.chrom3.standardFormat.txt"
+    output:
+        "supplfig_ASE_control/ASE_correlation.pdf"
+    script:
+        "supplfig_ASE_control/ASE_correlation.R"
+
+rule supplfig_ASE_control_other:
+    input:
+        cyo_chr2   = config["path"] + "analyses/ase/deseq/DE_control.cyo.chrom2.standardFormat.txt",
+        tm3_chr3   = config["path"] + "analyses/ase/deseq/DE_control.tm3.chrom3.standardFormat.txt",
+        old_chr2   = config["path"] + "analyses/ase/deseq/DE_control.oldf1.chrom2.standardFormat.txt",
+        old_chr3   = config["path"] + "analyses/ase/deseq/DE_control.oldf1.chrom3.standardFormat.txt",
+        new_chr2   = config["path"] + "analyses/ase/deseq/DE_control.newf1.chrom2.standardFormat.txt",
+        new_chr3   = config["path"] + "analyses/ase/deseq/DE_control.newf1.chrom3.standardFormat.txt",
+        intf1_chr2 = config["path"] + "analyses/ase/deseq/DE_control.old_vs_new.chrom2.standardFormat.txt",
+        intf1_chr3 = config["path"] + "analyses/ase/deseq/DE_control.old_vs_new.chrom3.standardFormat.txt",
+        intn1_chr2 = config["path"] + "analyses/ase/deseq/DE_control.cyo_vs_double.chrom2.standardFormat.txt",
+        intn1_chr3 = config["path"] + "analyses/ase/deseq/DE_control.tm3_vs_double.chrom3.standardFormat.txt"
+    output:
+        "other/ASE_single_balancer_control.pdf"
+    script:
+        "other/ASE_single_balancer_control.R"
+
+
+### ASE gene corrleations
+
+rule fig3b_ASE_gene_distance:
+    input:
+        gff = config["path"] + "analyses/SNV_annotation/reformatted.gff",
+        ase = config["path"] + "analyses/ase/deseq/DESeq.N1_6-8h.standardFormat.txt"
+    output:
+        "fig3b_ASE_gene_distance/ASE_gene_distance.pdf"
+    script:
+        "fig3b_ASE_gene_distance/ASE_gene_distance.R"
+
+
+rule supplfig_ASE_cnv_overlap:
+    input:
+        ase = config["path"] + "analyses/ase/deseq/DESeq.N1_6-8h.standardFormat.txt",
+        gff = config["path"] + "analyses/SNV_annotation/reformatted.gff",
+        dels = config["path"] + "analyses/SV_filter/FINAL/DEL.final.bed",
+        dups = config["path"] + "analyses/SV_filter/FINAL/DUP.final.bed"
+    output:
+        "supplfig_ASE_cnv_overlap/ASE_cnv_overlap.pdf"
+    script:
+        "supplfig_ASE_cnv_overlap/ASE_cnv_overlap.R"
+
+
+rule fig3c_gene_manhattan:
+    input:
+        ase = config["path"] + "analyses/ase/deseq/DESeq.N1_6-8h.standardFormat.txt",
+        exons = config["path"] + "analyses/tracks/genes/exons.bed"
+    output:
+        "fig3c_gene_manhattan/manhattan.pdf"
+    script:
+        "fig3c_gene_manhattan/manhattan.R"
+
+
+
+################################################################################
+### Capture-C
+################################################################################
+
+rule fig5a_sign_capC_interactions:
+    input:
+        "/g/furlong/project/37_Capture-C/analysis/balancer_cap2/contacts_noARS_all/DESeq2_interactions.Rdata"
+    output:
+        num_diff_int   = "fig5a_sign_capC_interactions/num_diff_interactions.pdf",
+        num_diff_relative = "fig5a_sign_capC_interactions/num_diff_interactions_relative.pdf",
+        histogram      = "fig5a_sign_capC_interactions/histogram.pdf",
+        num_int_violin = "fig5a_sign_capC_interactions/num_diff_interactions_violin.pdf",
+        strength_diff_int    = "fig5a_sign_capC_interactions/strength_diff_interactions.pdf",
+        boxplot     = "fig5a_sign_capC_interactions/diff_interactions_boxplot.pdf",
+        scatter     = "fig5a_sign_capC_interactions/diff_interactions_scatter.pdf"
+    script:
+        "fig5a_sign_capC_interactions/plot_sign_capC_interactions.R"

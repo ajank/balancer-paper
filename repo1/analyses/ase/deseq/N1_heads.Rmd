@@ -1,0 +1,398 @@
+---
+title: "ASE analysis in adult flies (N1 + F1)"
+author: "Sascha Meiers"
+date: "July 7, 2016"
+output: html_document
+---
+
+> Compile with `Rscript -e 'rmarkdown::render("N1_heads.Rmd", clean=F, output_format="all");'`
+
+# Crossing scheme
+Parental lines:
+$$ +/+; +/+; X/X \quad\text{and}\quad   If/Cyo; Sb/TM3; X_b/Y_b $$
+
+$F_1$ generation: 
+$$ +/CyO; +/TM3; X/X_b \quad\text{or}\quad +/CyO; +/TM3; X/Y_b $$
+
+$N_1$ generation pool:
+
+| chr2 | chr3 | chrX\Y |
+| ---- | ---- | -------|
+| $1 \times +/CyO$ | $1 \times +/TM3$ | $2 \times X/X$   |
+| $3 \times +/+$   | $3 \times +/+$ | $2 \times X/Y_b$ |
+
+Ergo, there is no more chromosome X from the balanced line.
+
+### Sex contribution
+
+Ratio X/Y in the different samples (`samtools view -c -F2048 chr?`)
+
+```{r}
+a = data.frame(chrX =  c(10048020, 10102894, 8670594),
+               chrY =  c(37856,    57592,    42532),
+               chr2L = c(11758416, 11648928, 9018268),
+               GT =    c("pool",   "CyOTM3", "+/+"),
+               stage = c("head",   "head",   "head"))
+# Normalize by chr2L ratio:
+a$X_Y_ratio  = a$chrX/a$chrY
+a$X_2_ratio  = a$chrX/a$chr2L
+a
+```
+# Determining ASE using DeSeq
+
+```{r, message=FALSE, warning=FALSE}
+source("common.R")
+```
+
+### Input data preparation
+
+```{r}
+n=c("Sample",      "File",                                         "Haplotype",  "CyO", "TM3", "GT",   "Replicate")
+x=c("N1_11_1_BAL", "N1_pool_heads_rep1.alt.htseq-count-rev.txt",   "balancer",   1,     1,     "pool",   1,
+    "N1_11_1_VRG", "N1_pool_heads_rep1.ref.htseq-count-rev.txt",   "virginizer", 1,     1,     "pool",   1,
+    "N1_11_2_BAL", "N1_pool_heads_rep2.alt.htseq-count-rev.txt",   "balancer",   1,     1,     "pool",   2,
+    "N1_11_2_VRG", "N1_pool_heads_rep2.ref.htseq-count-rev.txt",   "virginizer", 1,     1,     "pool",   2,
+    "N1_40_1_BAL", "N1_CyO_heads_rep1.alt.htseq-count-rev.txt",    "balancer",   4,     0,     "CyO",    1,
+    "N1_40_1_VRG", "N1_CyO_heads_rep1.ref.htseq-count-rev.txt",    "virginizer", 4,     0,     "CyO",    1,
+    "N1_40_2_BAL", "N1_CyO_heads_rep2.alt.htseq-count-rev.txt",    "balancer",   4,     0,     "CyO",    2,
+    "N1_40_2_VRG", "N1_CyO_heads_rep2.ref.htseq-count-rev.txt",    "virginizer", 4,     0,     "CyO",    2,
+    "N1_04_1_BAL", "N1_TM3_heads_rep1.alt.htseq-count-rev.txt",    "balancer",   0,     4,     "TM3",    1,
+    "N1_04_1_VRG", "N1_TM3_heads_rep1.ref.htseq-count-rev.txt",    "virginizer", 0,     4,     "TM3",    1,
+    "N1_04_2_BAL", "N1_TM3_heads_rep2.alt.htseq-count-rev.txt",    "balancer",   0,     4,     "TM3",    2,
+    "N1_04_2_VRG", "N1_TM3_heads_rep2.ref.htseq-count-rev.txt",    "virginizer", 0,     4,     "TM3",    2,
+    "N1_44_1_BAL", "F1_CyOTM3_heads_rep1.alt.htseq-count-rev.txt", "balancer",   4,     4,     "CyOTM3", 1,
+    "N1_44_1_VRG", "F1_CyOTM3_heads_rep1.ref.htseq-count-rev.txt", "virginizer", 4,     4,     "CyOTM3", 1,
+    "N1_44_2_BAL", "F1_CyOTM3_heads_rep2.alt.htseq-count-rev.txt", "balancer",   4,     4,     "CyOTM3", 2,
+    "N1_44_2_VRG", "F1_CyOTM3_heads_rep2.ref.htseq-count-rev.txt", "virginizer", 4,     4,     "CyOTM3", 2)
+D = data.frame(matrix(x, byrow=T,ncol=7))
+colnames(D) = n
+D$File = paste("../../readSeparation/counts", D$File, sep="/")
+```
+
+I filter out genes with low counts.
+
+```{r}
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~ 1) # start without design
+DE <- DE[ rowSums(counts(DE)) >= 4*30, ]
+```
+
+**`r dim(DE)[1]` genes** can be analysed. 
+
+Annotate genes with chromosome and length
+
+## Data inspection
+
+```{r}
+DE_long_a <- assay_long(assay(DE)) %>%
+             merge(., gff, by="gene_id")
+DE_rlog_a <- assay(rlog(DE, blind=FALSE, fitType = "local")) %>% 
+             assay_long %>%
+             merge(., gff, by="gene_id")
+```
+
+Here are the balancer ratios:
+
+```{r, message=FALSE, warning=FALSE, fig.width=9, fig.height=6, dev=c('png','pdf')}
+DE_long_a %>%
+  dcast(., GT + Replicate + gene_id ~ Haplotype, value.var = "count") %>%
+  ggplot() + 
+  aes(`balancer`/(`balancer` + `virginizer`), fill=Replicate) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  theme_minimal() + 
+  facet_wrap(~ GT)
+```
+
+The same, but stratified by chromosome and only for replicate 1:
+
+```{r, message=FALSE, warning=FALSE, fig.width=9, fig.height=6, dev=c('png','pdf')}
+DE_long_a %>%
+  mutate(chrom2 = factor(substr(as.character(DE_long_a$chrom), 4,4))) %>%
+  dcast(., chrom2 + GT + Replicate + gene_id ~ Haplotype, value.var = "count") %>%
+  filter(Replicate == 1, chrom2 != "4") %>%
+  ggplot() + 
+  aes(`balancer`/(`balancer` + `virginizer`), fill = chrom2) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  coord_cartesian(ylim=c(0,10)) + 
+  theme_minimal() + 
+  ggtitle("Replicate 1") +
+  facet_wrap(~ GT)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=9, fig.height=6, dev=c('png','pdf')}
+DE_long_a %>%
+  mutate(chrom2 = factor(substr(as.character(DE_long_a$chrom), 4,4))) %>%
+  dcast(., chrom2 + GT + Replicate + gene_id ~ Haplotype, value.var = "count") %>%
+  filter(Replicate == 2, chrom2 != "4") %>%
+  ggplot() + 
+  aes(`balancer`/(`balancer` + `virginizer`), fill = chrom2) + 
+  geom_density(adjust=0.5, alpha=0.5) + 
+  coord_cartesian(ylim=c(0,10)) + 
+  theme_minimal() + 
+  ggtitle("Replicate 2") +
+  facet_wrap(~ GT)
+```
+
+
+Heat map
+
+```{r, message=FALSE, warning=FALSE, fig.width=6, fig.height=6, dev=c('png','pdf')}
+mm = as.matrix(dist(t(assay(rlog(DE, blind=FALSE)))))
+pheatmap(mm,  cluster_rows = T, cluster_cols = T, 
+         color = colorRampPalette(rev(brewer.pal(9, "Blues")) )(255))
+```
+
+### Correlations
+
+Replicates:
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+dcast(DE_rlog_a, GT + Haplotype + gene_id + chrom ~ Replicate, value.var = "count") %>%
+  ggplot() + 
+  aes(`1`,`2`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_wrap(~ GT) +
+  guides(colour = guide_legend(override.aes = list(size=4))) + 
+  xlab("1st replicate [log2 read count]") +
+  ylab("2nd replicate [log2 read count]") +
+  ggtitle("Correlation between replicates")
+```
+
+Haplotypes:
+
+```{r, echo=F, width=9, height=10, dev=c('png','pdf')}
+dcast(DE_rlog_a, GT + Replicate + gene_id + chrom ~ Haplotype, value.var = "count") %>%
+  ggplot() + 
+  aes(`balancer`,`virginizer`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_wrap(~ GT) +
+  guides(colour = guide_legend(override.aes = list(size=4))) + 
+  xlab("Balancer haplotype [log2 read count]") +
+  ylab("Wild type haplotype [log2 read count]") +
+  ggtitle("Correlation between haplotypes")
+```
+
+Experiments:
+
+```{r, echo=F, width=9, height=9, dev=c('png','pdf')}
+dcast(DE_rlog_a, Haplotype + Replicate + gene_id + chrom ~ GT, value.var = "count") %>%
+  ggplot() + 
+  aes(`CyOTM3`,`pool`, col = chrom) + 
+  geom_point(alpha=0.4, size=0.2) + 
+  theme_minimal() + 
+  facet_grid(Haplotype ~ Replicate) +
+  xlab("N1 pool [log2 read count]") +
+  ylab("only F1 [log2 read count]") +
+  ggtitle("Correlation between the two crosses")
+``` 
+
+Finally also a PCA:
+
+```{r, width=6, height=6, dev=c('png','pdf')}
+plotPCA( rlog(DE, blind=FALSE), ntop=2000,intgroup=c("Haplotype","GT")) + 
+  theme_minimal() + 
+  theme(legend.position = c(0.05,0.95), legend.justification = c(0,1))
+```
+
+
+
+--
+
+
+
+## DE analysis
+
+### Allele ratios that change consistently across all 4 replicates
+
+Here we combine data from $F_1$ cross and $N_1$ pool. 
+We **do not use** the other two genotypes!
+
+We also consider **only chromosomes 2 and 3**, because chromosome X 
+would bias the whole analysis.
+
+```{r, message=FALSE, warnings=F}
+Title = "Balancer vs. virginizer (heads, F1 + N1 pool)"
+DE1 <- DESeqDataSetFromHTSeqCount(dplyr::filter(D, GT=="pool" | GT=="CyOTM3"), 
+                                  design = ~ GT + Haplotype)
+DE1 <- DE1[ rowSums(counts(DE1)) >= 2*30, ]
+DE1 <- DE1[ rownames(DE1) %in% filter(gff, grepl('chr[32][LR]', chrom))$gene_id, ]
+A1 = DESeq(DE1)
+R1 = results(A1, contrast=c("Haplotype", "balancer", "virginizer"))
+mcols(R1)
+summary(R1)
+# write.table(R1, file = "DESeq.heads.standardFormat.txt", quote = F, sep = "\t")
+```
+
+```{r, fig.width=8, fig.height=3, dev=c('png','pdf'), echo=F}
+corr1 = fdrtool(R1$stat, plot = F)
+rbind(data.frame(p = R1$padj, t = "before correction"),
+      data.frame(p = corr1$pval, t = "after correction")) %>%
+  ggplot() + aes(p) + theme_minimal() +
+    geom_histogram(binwidth=0.1) + scale_x_log10() +
+    facet_grid(.~t, scales="free")
+R1$pvalue = corr1$pval
+R1$padj   = corr1$qval
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+ggplot(as.data.frame(R1)) + 
+  aes(y=-log10(pvalue), x=log2FoldChange, col = padj<0.05) + 
+  geom_point(size=1) +
+  ylab("-log10(corr. p-value)") + 
+  theme_bw() + 
+  ggtitle(Title) + 
+  theme(legend.position=c(.98, 0.98), legend.justification=c(1,1)) + 
+  scale_colour_discrete(name=NULL, labels=c("not significant",
+            expression(p[corrected] <= '5%')) )
+```
+
+```{r}
+dim(R1[R1$padj<= 0.05, ])
+```
+
+```{r, echo=FALSE, message=FALSE, fig.height=3, fig.width=5, dev=c('png','pdf')}
+as.data.frame(R1) %>% filter(padj<= 0.05) %>%
+  ggplot() + aes(log2FoldChange) + 
+  geom_histogram(binwidth=0.1) +
+  theme_minimal() +
+  ggtitle(Title)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+plotMA(R1)
+```
+
+```{r, fig.height=9, fig.width=12, dev=c('png','pdf')}
+topGenes <- rownames(R1)[order(R1$padj)]
+geneCountData(topGenes[1:12], DE) %>% 
+  merge(., gff, by.x="gene", by.y="gene_id", all.x=T) %>%
+  ggplot(., aes(x = Haplotype, y = count, color = GT, 
+            group = interaction(GT, Replicate))) + 
+  scale_y_log10(breaks=c(10,100,1000,10000)) + 
+  geom_point(size=3) + 
+  geom_line() + 
+  theme_minimal() + 
+  facet_wrap(~ gene + chrom)
+```
+
+```{r}
+x <- data.frame(R1, gene_id=row.names(R1)) %>% 
+     merge(., gff, by="gene_id") %>% 
+     filter(padj<=0.05) %>% 
+     select(chrom) %>% 
+     table
+x[x>0]
+```
+
+
+### Interaction term
+
+... combining F1 sample + N1 pool:
+
+```{r, message=FALSE, warnings=F}
+Title = "Genotype haplotype interaction (heads, F1 + N1 pool)"
+DE2 <- DESeqDataSetFromHTSeqCount(dplyr::filter(D, GT=="pool" | GT=="CyOTM3"), 
+                                 design = ~ GT*Haplotype)
+DE2 <- DE2[ rowSums(counts(DE2)) >= 50, ]
+DE2 <- DE2[ rownames(DE2) %in% filter(gff, grepl('chr[32][LR]', chrom))$gene_id, ]
+A2 = DESeq(DE2)
+R2 = results(A2)
+mcols(R2)
+summary(R2)
+```
+
+```{r, fig.width=8, fig.height=3, dev=c('png','pdf'), echo=F}
+corr2 = fdrtool(R2$stat, plot = F)
+rbind(data.frame(p = R2$padj, t = "before correction"),
+      data.frame(p = corr2$pval, t = "after correction")) %>%
+  ggplot() + aes(p) + theme_minimal() +
+    geom_histogram(binwidth=0.1) + scale_x_log10() +
+    facet_grid(.~t, scales="free")
+R2$pvalue = corr2$pval
+R2$padj   = corr2$qval
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+ggplot(as.data.frame(R2)) + 
+  aes(y=-log10(pvalue), x=log2FoldChange, col = padj<0.05) + 
+  geom_point(size=1) +
+  ylab("-log10(corr. p-value)") + 
+  theme_bw() + 
+  ggtitle(Title) + 
+  theme(legend.position=c(.98, 0.98), legend.justification=c(1,1)) + 
+  scale_colour_discrete(name=NULL, labels=c("not significant",
+            expression(p[corrected] <= '5%')) )
+```
+
+```{r}
+dim(R2[R2$padj<= 0.05, ])
+```
+
+```{r, echo=FALSE, message=FALSE, fig.height=3, fig.width=5, dev=c('png','pdf')}
+as.data.frame(R2) %>% filter(padj<= 0.05) %>%
+  ggplot() + aes(log2FoldChange) + 
+  geom_histogram(binwidth=0.1) +
+  theme_minimal() +
+  ggtitle(Title)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, dev=c('png','pdf')}
+plotMA(R2)
+```
+
+```{r, fig.height=9, fig.width=12, dev=c('png','pdf')}
+topGenes <- rownames(R2)[order(R2$padj)]
+geneCountData(topGenes[1:12], DE1) %>% 
+  merge(., gff, by.x="gene", by.y="gene_id", all.x=T) %>%
+  ggplot(., aes(x = Haplotype, y = count, color = GT, 
+            group = interaction(GT, Replicate))) + 
+  scale_y_log10(breaks=c(10,100,1000,10000)) + 
+  geom_point(size=3) + 
+  geom_line() + 
+  theme_minimal() + 
+  facet_wrap(~ gene + chrom)
+#plotGene(topGenes[1:12])
+```
+
+```{r}
+x <- data.frame(R1, gene_id=row.names(R1)) %>% 
+     merge(., gff, by="gene_id") %>% 
+     filter(padj<=0.05) %>% 
+     select(chrom) %>% 
+     table
+x[x>0]
+```
+
+
+
+### Writing down a table of significant genes
+
+Annotate a bit first.
+
+```{r}
+R_anno <- data.frame(R1, gene_id=rownames(R1)) %>% 
+    merge(., gff, by = "gene_id")
+# Expression from N1_6-8h data
+R_anno <- read_htseqcount("F1_CyOTM3_heads_rep1.htseq-count-rev.txt", gff) %>%
+    rename(F1_norm.1.count = count, F1_norm.1.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+R_anno <- read_htseqcount("F1_CyOTM3_heads_rep2.htseq-count-rev.txt", gff) %>%
+    rename(F1_norm.2.count = count, F1_norm.2.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)    
+R_anno <- read_htseqcount("N1_pool_heads_rep1.htseq-count-rev.txt", gff) %>%
+    rename(N1_norm.1.count = count, N1_norm.1.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)
+R_anno <- read_htseqcount("N1_pool_heads_rep2.htseq-count-rev.txt", gff) %>%
+    rename(N1_norm.2.count = count, N1_norm.2.fpkm = FPKM) %>%
+    merge(R_anno, ., by="gene_id", all.x=T)  
+
+tab <- R_anno %>%
+    select(-baseMean, -lfcSE, -stat, -length, -padj, -log2FoldChange, 
+           cis.lfc = log2FoldChange, cis.padj = padj, cis.pval = pvalue) %>%
+    group_by(gene_id) %>%
+    summarize_each(funs(first)) %>%
+    arrange(desc(cis.padj))
+write.table(tab, row.names=F, quote=F, file = "DESeq.adult.chr2_3.txt", sep="\t")
+```
+

@@ -1,0 +1,67 @@
+configfile:	"Snakemake.conf.json"
+
+rule all:
+    input:      expand("bam/{sample}.sort.rg.bam.bai", sample = config["PU"])
+
+
+rule map_star:
+    output:     "bam/{s}.Aligned.out.bam"
+    input:      "fastq/{s}.1.fq.gz",
+                "fastq/{s}.2.fq.gz"
+    threads:    1
+    shell:      """
+                module load STAR
+                STAR \
+                    --runThreadN {threads} \
+                    --genomeDir {config[star_idx]} \
+                    --readFilesIn {input} \
+                    --sjdbGTFfile {config[gff]} \
+                    --readFilesCommand zcat \
+                    --outFileNamePrefix bam/{wildcards.s}. \
+                    --sjdbGTFtagExonParentTranscript Parent \
+                    --outSAMtype BAM Unsorted \
+                    --outSAMunmapped Within \
+                    --outSAMorder PairedKeepInputOrder \
+                    --outBAMcompression -1 \
+                    --outTmpDir bam/{wildcards.s}.tmp
+				rm -rf bam/{wildcards.s}.tmp
+				rm -rf bam/{wildcards.s}._STARgenome
+                """
+
+rule sort_bam:
+    output:     temp("bam/{s}.sort.bam")
+    input:      "bam/{s}.Aligned.out.bam"
+    threads:    4
+    shell:      """
+                module load SAMtools
+                samtools sort -@ {threads} -o bam/{wildcards.s}.sort.bam -O BAM {input}
+                """
+
+rule add_RG:
+    output:     "bam/{s}.sort.rg.bam"
+    input:      "bam/{s}.sort.bam"
+    params:     lb = "{s}",
+                sm = lambda wc: re.sub(r'[_.]r(ep)?[0-9]$', '', str(wc)),
+                pu = lambda wc: config["PU"][str(wc)]
+    shell:      """
+                module load picard
+                java -jar $EBROOTPICARD/picard.jar AddOrReplaceReadGroups \
+                        I={input} \
+                        O={output} \
+                        LB={params.lb} \
+                        PL=Illumina.HiSeq \
+                        PU={params.pu} \
+                        SM={params.sm} \
+                        ID=all \
+                        SO=coordinate
+                """
+
+rule index_and_clean:
+    output:     "bam/{s}.sort.rg.bam.bai"
+    input:      "bam/{s}.sort.rg.bam"
+    shell:      """
+                #mv {input} bam/.{wildcards.s}
+                #rm -rf bam/{wildcards.s}*
+                #mv bam/.{wildcards.s} {input}
+                samtools index {input}
+                """

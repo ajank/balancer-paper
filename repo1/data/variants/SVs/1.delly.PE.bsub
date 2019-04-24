@@ -1,0 +1,29 @@
+#!/bin/bash
+
+#BSUB -J dellyWGS[1-1]
+#BSUB -n 4
+#BSUB -M 12000
+#BSUB -R "rusage[mem=12000]"
+
+delly=/g/korbel/meiers/tools/delly/delly_v0.7.1_parallel_linux_x86_64bit 
+#delly=/g/korbel/meiers/tools/delly/delly_v0.7.2_parallel_linux_x86_64bit
+# Note: Delly 0.7.1 had some issues with negative TRA/DEL coordinates... that's
+#       why it failed in some cases. I've rerun the important parts in
+#       Delly 0.7.2 and this version should be used from now on
+
+modes=(dummy DEL DUP INV TRA INS)
+mode=${modes[$LSB_JOBINDEX]}
+
+f1=../../mapping/wgs/CROSS.sort.rmdup.merge.bam
+f2=../../mapping/wgs/VRG.sort.rmdup.merge.bam
+
+export OMP_NUM_THREADS=4
+
+$delly 	-x exclude.chr.txt \
+       	-t $mode \
+		-g /g/korbel/shared/datasets/refgenomes/fly/dm6.fa \
+		-o PE.delly071.$mode.vcf \
+		$f1 $f2
+
+bgzip PE.delly071.$mode.vcf
+

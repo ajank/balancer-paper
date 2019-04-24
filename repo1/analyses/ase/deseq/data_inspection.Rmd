@@ -1,0 +1,179 @@
+---
+title: "ASE data inpsection"
+output: html_document
+author: "Sascha Meiers"
+date: "March 22, 2017"
+---
+
+> Compile with `Rscript -e 'library(knitr); rmarkdown::render("data_inspection.Rmd", clean=F, output_format="all");'`
+
+```{r}
+source("common.R")
+suppressPackageStartupMessages(library(data.table))
+```
+
+## Loading data
+
+Here I load all data using the DESeq2 convenience function, but I won't test for DE genes (this is done in `DESeq.Rmd`).
+
+```{r} 
+n=c("file",                                               "gt",     "stage", "haplotype",  "repl", "comment")
+x=c("N1_pool_6-8h_rep1.alt.htseq-count-rev.txt",          "pool",   "6-8h",  "balancer",   1,  "father.vrg", 
+    "N1_pool_6-8h_rep1.ref.htseq-count-rev.txt",          "pool",   "6-8h",  "virginizer", 1,  "father.vrg",
+    "N1_pool_6-8h_rep1.htseq-count-rev.txt",              "pool",   "6-8h",  "all",        1,  "father.vrg",
+    "N1_pool_6-8h_rep2.alt.htseq-count-rev.txt",          "pool",   "6-8h",  "balancer",   2,  "father.vrg", 
+    "N1_pool_6-8h_rep2.ref.htseq-count-rev.txt",          "pool",   "6-8h",  "virginizer", 2,  "father.vrg", 
+    "N1_pool_6-8h_rep2.htseq-count-rev.txt",              "pool",   "6-8h",  "all",        2,  "father.vrg",
+    "N1sex_pool_6-8h_rep1.alt.htseq-count-rev.txt",       "pool",   "6-8h",  "balancer",   3,  "mother.vrg", 
+    "N1sex_pool_6-8h_rep1.ref.htseq-count-rev.txt",       "pool",   "6-8h",  "virginizer", 3,  "mother.vrg", 
+    "N1sex_pool_6-8h_rep1.htseq-count-rev.txt",           "pool",   "6-8h",  "all",        3,  "mother.vrg",
+    "N1sex_pool_6-8h_rep2.alt.htseq-count-rev.txt",       "pool",   "6-8h",  "balancer",   4,  "mother.vrg", 
+    "N1sex_pool_6-8h_rep2.ref.htseq-count-rev.txt",       "pool",   "6-8h",  "virginizer", 4,  "mother.vrg", 
+    "N1sex_pool_6-8h_rep2.htseq-count-rev.txt",           "pool",   "6-8h",  "all",        4,  "mother.vrg",
+    "N1_pool_heads_rep1.alt.htseq-count-rev.txt",         "pool",   "adult", "balancer",   5,  "mixed.sex",
+    "N1_pool_heads_rep1.ref.htseq-count-rev.txt",         "pool",   "adult", "virginizer", 5,  "mixed.sex",
+    "N1_pool_heads_rep1.htseq-count-rev.txt",             "pool",   "adult", "all",        5,  "mixed.sex",
+    "N1_pool_heads_rep2.alt.htseq-count-rev.txt",         "pool",   "adult", "balancer",   6,  "mixed.sex",
+    "N1_pool_heads_rep2.ref.htseq-count-rev.txt",         "pool",   "adult", "virginizer", 6,  "mixed.sex",
+    "N1_pool_heads_rep2.htseq-count-rev.txt",             "pool",   "adult", "all",        6,  "mixed.sex",
+    "N1_CyO_heads_rep1.alt.htseq-count-rev.txt",          "CyO",    "adult", "balancer",   7,  "mixed.sex",
+    "N1_CyO_heads_rep1.ref.htseq-count-rev.txt",          "CyO",    "adult", "virginizer", 7,  "mixed.sex",
+    "N1_CyO_heads_rep1.htseq-count-rev.txt",              "CyO",    "adult", "all",        7,  "mixed.sex",
+    "N1_CyO_heads_rep2.alt.htseq-count-rev.txt",          "CyO",    "adult", "balancer",   8,  "mixed.sex",
+    "N1_CyO_heads_rep2.ref.htseq-count-rev.txt",          "CyO",    "adult", "virginizer", 8,  "mixed.sex",
+    "N1_CyO_heads_rep2.htseq-count-rev.txt",              "CyO",    "adult", "all",        8,  "mixed.sex",
+    "N1_TM3_heads_rep1.alt.htseq-count-rev.txt",          "TM3",    "adult", "balancer",   9,  "mixed.sex",
+    "N1_TM3_heads_rep1.ref.htseq-count-rev.txt",          "TM3",    "adult", "virginizer", 9,  "mixed.sex",
+    "N1_TM3_heads_rep1.htseq-count-rev.txt",              "TM3",    "adult", "all",        9,  "mixed.sex",
+    "N1_TM3_heads_rep2.alt.htseq-count-rev.txt",          "TM3",    "adult", "balancer",   10, "mixed.sex",
+    "N1_TM3_heads_rep2.ref.htseq-count-rev.txt",          "TM3",    "adult", "virginizer", 10, "mixed.sex",
+    "N1_TM3_heads_rep2.htseq-count-rev.txt",              "TM3",    "adult", "all",        10, "mixed.sex",
+    "F1_CyOTM3_heads_rep1.alt.htseq-count-rev.txt",       "CyOTM3", "adult", "balancer",   11, "mixed.sex",
+    "F1_CyOTM3_heads_rep1.ref.htseq-count-rev.txt",       "CyOTM3", "adult", "virginizer", 11, "mixed.sex",
+    "F1_CyOTM3_heads_rep1.htseq-count-rev.txt",           "CyOTM3", "adult", "all",        11, "mixed.sex",
+    "F1_CyOTM3_heads_rep2.alt.htseq-count-rev.txt",       "CyOTM3", "adult", "balancer",   12, "mixed.sex",
+    "F1_CyOTM3_heads_rep2.ref.htseq-count-rev.txt",       "CyOTM3", "adult", "virginizer", 12, "mixed.sex",
+    "F1_CyOTM3_heads_rep2.htseq-count-rev.txt",           "CyOTM3", "adult", "all",        12, "mixed.sex",
+    "F1_CyOTM3_headsFemale_rep1.alt.htseq-count-rev.txt", "CyOTM3", "adult", "balancer",   13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep1.ref.htseq-count-rev.txt", "CyOTM3", "adult", "virginizer", 13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep1.htseq-count-rev.txt",     "CyOTM3", "adult", "all",        13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep2.alt.htseq-count-rev.txt", "CyOTM3", "adult", "balancer",   13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep2.ref.htseq-count-rev.txt", "CyOTM3", "adult", "virginizer", 13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep2.htseq-count-rev.txt",     "CyOTM3", "adult", "all",        13, "only.Female",
+    "F1_CyOTM3_headsFemale_rep3.alt.htseq-count-rev.txt", "CyOTM3", "adult", "balancer",   14, "only.Female",
+    "F1_CyOTM3_headsFemale_rep3.ref.htseq-count-rev.txt", "CyOTM3", "adult", "virginizer", 14, "only.Female",
+    "F1_CyOTM3_headsFemale_rep3.htseq-count-rev.txt",     "CyOTM3", "adult", "all",        14, "only.Female",
+    "F1_CyOTM3_headsFemale_rep4.alt.htseq-count-rev.txt", "CyOTM3", "adult", "balancer",   14, "only.Female",
+    "F1_CyOTM3_headsFemale_rep4.ref.htseq-count-rev.txt", "CyOTM3", "adult", "virginizer", 14, "only.Female",
+    "F1_CyOTM3_headsFemale_rep4.htseq-count-rev.txt",     "CyOTM3", "adult", "all",        14, "only.Female",
+    "N1_pool_4-8h_rep1.alt.htseq-count-rev.txt",          "pool",   "4-8h",  "balancer",   15, "old",
+    "N1_pool_4-8h_rep1.ref.htseq-count-rev.txt",          "pool",   "4-8h",  "virginizer", 15, "old",
+    "N1_pool_4-8h_rep1.htseq-count-rev.txt",              "pool",   "4-8h",  "all",        15, "old",
+    "N1_pool_4-8h_rep2.alt.htseq-count-rev.txt",          "pool",   "4-8h",  "balancer",   16, "old", 
+    "N1_pool_4-8h_rep2.ref.htseq-count-rev.txt",          "pool",   "4-8h",  "virginizer", 16, "old",
+    "N1_pool_4-8h_rep2.htseq-count-rev.txt",              "pool",   "4-8h",  "all",        16, "old"          )
+D = data.table(matrix(x, byrow=T,ncol=6))
+colnames(D) = n
+D[haplotype != "all",]$file = paste("../../readSeparation/counts", D[haplotype != "all",]$file, sep="/")
+D[haplotype == "all",]$file = paste("../../gene_expression/counts", D[haplotype == "all",]$file, sep="/")
+D$name = paste(D$gt, D$stage, D$comment,sub('.*_(rep\\d?).*', '\\1', D$file),D$haplotype,sep = "_")
+setcolorder(D, c("name", "file", "gt", "stage", "haplotype", "repl", "comment"))
+```
+
+Load data and merge technical replicates
+
+```{r} 
+DE <- DESeqDataSetFromHTSeqCount(D, design = ~1)
+DE <- collapseReplicates(DE, interaction(colData(DE)$haplotype, colData(DE)$repl), renameCols = F)
+```
+
+Get data into shape: long format, but counts of all haplotypes in each row (similar to what funciton `assay_long` does, just using data.table):
+
+```{r} 
+colData <- cbind(as.data.table(colData(DE)), sample=rownames(colData(DE)))
+COUNTS = cbind(as.data.table(counts(DE)), gene_id = row.names(counts(DE)) ) %>%
+  melt.data.table(., "gene_id", variable.name = "sample", value.name = "count") %>%
+  merge(., colData, by = "sample", all.x = T) %>%
+  dcast.data.table(., gene_id + gt + stage + repl + comment ~ haplotype, value.var="count") %>%
+  merge(., as.data.table(gff), by="gene_id", all.x=T) %>%
+  subset(., grepl('^chr[23X][LR]?$', chrom))
+COUNTS = COUNTS[, chrom := substr(chrom, 1, 4)]
+COUNTS = COUNTS[, rep:= paste("replicate", as.integer(COUNTS$repl) %% 2 + 1)]
+```
+
+```{r}
+MIN_READ_COUNT = 20
+```
+
+## Plot total expression levels
+
+```{r expression, message=FALSE, warning=FALSE, fig.width=10, fig.height=14, dev=c('png','pdf')}
+ggplot(COUNTS) + aes(all/length*1000) + 
+  geom_histogram(binwidth=.5) + 
+  xlab("Total reads per kb exon") + 
+  geom_histogram() + scale_x_log10() +
+  facet_grid(stage + comment + gt ~ rep + chrom) + ggtitle("Gene expression") + 
+  theme_minimal()
+```
+
+## Plot replicate correlation for these samples
+
+```{r replicate_correlation, message=FALSE, warning=FALSE, fig.width=8, fig.height=14, dev=c('png','pdf')}
+tmp <- COUNTS
+tmp <- dcast.data.table(tmp, gene_id + stage + comment + gt + chrom ~ rep, value.var = "all")
+tmp <- tmp[, rsquared := cor(`replicate 1`, `replicate 2`), by = .(stage, comment, gt, chrom)]
+corr <- tmp[, .(rsquared = first(rsquared) ), by = .(stage, comment, gt, chrom)]
+ggplot(tmp) + aes(`replicate 1`, `replicate 2`, col = rsquared) + 
+  geom_point(alpha=0.2, size=0.5) + 
+  scale_x_log10() + scale_y_log10() +
+  facet_grid(stage + comment + gt ~ chrom) +
+  theme_minimal() +
+  guides(col=FALSE) +
+  geom_label(data = corr, x=0, y=Inf, hjust=0, vjust=1, aes(label = paste0("r^{2}==", round(rsquared,3))), parse=T )
+```
+
+As a special case I want to see how well the old and the new F1 data correlate:
+
+```{r correlation_F1, message=FALSE, warning=FALSE, fig.width=8, fig.height=3, dev=c('png','pdf')}
+tmp <- tmp[, `replicates combined` := `replicate 1` + `replicate 2`]
+tmp2 <- dcast.data.table(tmp[stage == "adult" & gt == "CyOTM3",], gene_id + chrom ~ comment, value.var = "replicates combined")
+corr2 <- cor(tmp2$mixed.sex, tmp2$only.Female)
+ggplot(tmp2) + aes(mixed.sex, only.Female) + 
+  geom_point(alpha=0.2, size=0.5) + 
+  scale_x_log10() + scale_y_log10() +
+  facet_grid(. ~ chrom) +
+  theme_minimal() +
+  guides(col=FALSE) +
+  geom_label(x=0, y=Inf, hjust=0, vjust=1, label = paste0("r^{2}==", round(corr2,3)), parse=T, inherit.aes = F )
+```
+
+## Plot ASE ratios for these samples:
+
+General parameters
+
+
+```{r ase_ratio, message=FALSE, warning=FALSE, fig.width=8, fig.height=14, dev=c('png','pdf')}
+ggplot(COUNTS[balancer+virginizer > MIN_READ_COUNT, ]) + 
+    facet_grid(stage + comment + gt ~ chrom) +
+    aes(balancer/(balancer+virginizer), fill = repl, col = repl) + 
+    geom_density(alpha=0.33) + 
+    ggtitle(paste("ASE ratio for genes with min", MIN_READ_COUNT, "reads")) + 
+    xlab("balancer ratio") +
+    guides(fill = FALSE, col = FALSE) +
+    coord_cartesian(ylim = c(0,10)) +
+    theme_classic()
+```
+
+
+## Balancer counts vs. WT counts
+
+```{r balancer_vs_virginizer, message=FALSE, warning=FALSE, fig.width=12, fig.height=14, dev=c('png','pdf')}
+ggplot(COUNTS[balancer+virginizer > MIN_READ_COUNT, ]) + 
+    facet_grid(stage + comment + gt ~ chrom + rep) +
+    aes(virginizer, balancer) + 
+    geom_point(alpha=0.33, size=0.5) + 
+    scale_x_log10() + 
+    scale_y_log10() +
+    ggtitle(paste("WT vs balancer counts (min ", MIN_READ_COUNT, "reads)")) + 
+    theme_minimal()
+```

@@ -1,0 +1,210 @@
+---
+title: "ASE analysis comparison"
+author: "Sascha Meiers"
+date: "May 25, 2016"
+output: html_document
+---
+
+> Compile with `Rscript -e 'library(knitr); rmarkdown::render("post_analysis.Rmd", clean=F, output_format="all");'`
+
+# Comparing new and old adult F1 data
+
+```{r}
+source("common.R")
+suppressPackageStartupMessages(library(data.table))
+DE_newF1adult = fread("DESeq.F1_headsFemale.standardFormat.txt")
+DE_oldF1adult = fread("DESeq.F1_heads.standardFormat.txt")
+DE_allF1adult = merge(DE_newF1adult[,.(gene_id, log2FoldChange, pvalue, padj)], 
+                      DE_oldF1adult[,.(gene_id, log2FoldChange, pvalue, padj)], 
+                      by="gene_id", suffixes=c(".new",".old"))
+```
+
+```{r adult_significant_venn, fig.width=4, fig.height=3}
+t = DE_allF1adult[, .(c = length(gene_id)), by = .(sign.new = padj.new < 0.05, sign.old = padj.old < 0.05)]
+library(VennDiagram)
+grid.newpage()
+draw.pairwise.venn(area1 = sum(t$c[t$sign.old==T]), 
+                   area2 = sum(t$c[t$sign.new==T]), 
+                   cross.area = sum(t$c[t$sign.old==T & t$sign.new==T]), 
+                   category = c("Old", "New"),
+                   lty = rep("blank", 2), fill = c("skyblue", "orange"),
+                   alpha = rep(0.4, 2), euler.d = TRUE, rotation.degree = 45)
+```
+
+```{r adultF1_significant_lfc_corr, fig.width=7, fig.height=4}
+ggplot(DE_allF1adult[padj.new < 0.05 | padj.old < 0.05,]) + 
+  aes(log2FoldChange.new, log2FoldChange.old, col=interaction(padj.old < 0.05, padj.new < 0.05)) + 
+  geom_point(alpha=0.7) + 
+  scale_color_discrete(name = "Sign. (old, new)") +
+  coord_cartesian(xlim=c(-3,3), ylim=c(-3,3), expand=F) +
+  scale_x_continuous(breaks=-2:2) +
+  scale_y_continuous(breaks=-2:2) +
+  ggtitle("Significant ASE genes in old and new RNA")
+```
+
+
+
+# Comparing (old) adult and embryonic RNA
+
+```{r adult_embryo_significant_venn, fig.width=4, fig.height=3}
+DE_N1embryo     = fread("DESeq.N1_6-8h.standardFormat.txt")
+DE_oldF1adult = fread("DESeq.F1_heads.standardFormat.txt")
+DE_em_ad = merge(DE_N1embryo[,.(gene_id, log2FoldChange, pvalue, padj)], 
+                 DE_oldF1adult[,.(gene_id, log2FoldChange, pvalue, padj)], 
+                 by="gene_id", suffixes=c(".embryo",".adult"))
+t = DE_em_ad[, .(c = length(gene_id)), by = .(sign.embryo = padj.embryo < 0.05, sign.adult = padj.adult < 0.05)]
+grid.newpage()
+draw.pairwise.venn(area1 = sum(t$c[t$sign.embryo==T]), 
+                   area2 = sum(t$c[t$sign.adult==T]), 
+                   cross.area = sum(t$c[t$sign.embryo==T & t$sign.adult==T]), 
+                   category = c("Embryo", "Adult (old)"),
+                   lty = rep("blank", 2), fill = c("skyblue", "orange"),
+                   alpha = rep(0.4, 2), euler.d = TRUE, rotation.degree = 45)
+```
+
+```{r adultembryo_significant_lfc_corr, fig.width=7, fig.height=4}
+ggplot(DE_em_ad[padj.embryo < 0.05 | padj.adult < 0.05,]) + 
+  aes(log2FoldChange.embryo, log2FoldChange.adult, col=interaction(padj.embryo < 0.05, padj.adult < 0.05)) + 
+  geom_point(alpha=0.7) + 
+  scale_color_discrete(name = "Sign. (embryo, adult)") +
+  coord_cartesian(xlim=c(-3,3), ylim=c(-3,3), expand=F) +
+  scale_x_continuous(breaks=-2:2) +
+  scale_y_continuous(breaks=-2:2) +
+  ggtitle("Significant ASE genes in embryos or (old) adult data")
+```
+
+----
+
+# Old 
+
+## Genes with decent coverage (in embryos)
+
+```{bash}
+#comm -1 -2 <(cut -f5 ../../gatk_asereadcounter/stats/N1_pool_6-8h.SNVs_balancers.SNVs.txt | sort -u) \
+#           <(cut -f5 ../../gatk_asereadcounter/stats/N1sex_pool_6-8h.SNVs_balancers.SNVs.txt | sort -u) \
+#           > N1_6-8.gene_ids.txt
+```
+
+
+
+# Comparison of adult and embryonic data
+
+```{r}
+# adult = read.table("DESeq.adult.chr2_3.txt", header=T) %>%
+#     mutate(fpkm  = (F1_norm.1.fpkm + F1_norm.2.fpkm + N1_norm.1.fpkm + N1_norm.2.fpkm)/4,
+#            sample = "adult", significant = cis.padj <= 0.05) %>%
+#     select(-starts_with("F1"), -starts_with("N1"), -starts_with("cis"), 
+#            padj = cis.padj, lfc = cis.lfc)
+# 
+# embryo = read.table("DESeq.N1_6-8h.chr2_3.txt", header=T) %>%
+#     mutate(fpkm  = (N1_norm.1.fpkm + N1_norm.2.fpkm + N1_rsex.1.fpkm + N1_rsex.2.fpkm)/4,
+#            sample = "embryo", significant = cis.padj <= 0.05) %>%
+#     select(-starts_with("N1"), -starts_with("int"), -starts_with("unf"), -starts_with("cis"),
+#            -length, padj = cis.padj, lfc = cis.lfc)
+#     
+# long = rbind(adult, embryo)
+# wide = merge(adult, select(embryo, -from, -to, -strand), by="gene_id", 
+#              suffixes = c(".adult", ".embryo"))
+```
+
+Correlation of total gene expression is not very high between adult fly heads
+and 6-8h embryos:
+
+```{r, fig.width=6, fig.height=6, dev=c('png','pdf')}
+# ggplot(wide) + aes(fpkm.adult, fpkm.embryo) + 
+#   geom_point(alpha=0.2) + 
+#   scale_x_log10() + scale_y_log10() + 
+#   ggtitle("Gene expression") +
+#   theme_minimal()
+```
+
+```{r, fig.width=6, fig.height=6, dev=c('png','pdf')}
+# subset <- wide %>% filter(fpkm.adult >= 2, fpkm.embryo >= 2)
+# ggplot(subset) + aes(lfc.adult, lfc.embryo) + geom_point(alpha=0.2) + 
+#   #coord_cartesian(xlim=c(-2,2), ylim=c(-2,2)) +
+#   xlab("embryonic balancer/vrg lfc") + 
+#   ylab("adult balancer/vrg lfc") + 
+#   ggtitle(paste(dim(subset)[1], "ASE for genes expressed in both")) + 
+#   theme_minimal()
+```
+
+```{r, fig.width=6, fig.height=6, dev=c('png','pdf')}
+# ggplot(subset) + aes(lfc.embryo, lfc.adult, 
+#                   col = interaction(padj.embryo <= 0.05, padj.adult <= 0.05)) + 
+#   geom_point(alpha=0.4) + theme_minimal() + 
+#   scale_color_discrete(name = "Significance: embryo.adult") + 
+#   theme(legend.position = c(0, 1), legend.justification = c(0, 1)) + 
+#   ggtitle("Significant ASE in embryos and adults")
+# table(with(subset,interaction(padj.embryo <= 0.05, padj.adult <= 0.05)))
+```
+
+Write down the list of common genes
+
+```{r}
+# subset %>% mutate(embryo.adult = interaction(padj.embryo <= 0.05, padj.adult <= 0.05)) %>%
+#   select(gene_id, embryo.adult, lfc.embryo, lfc.adult) %>%
+#   arrange(embryo.adult, gene_id) %>% 
+#   write.table(., file = "DESeq.comparison.txt", quote=F, row.names=F, sep="\t")
+```
+
+### Sanity checks
+
+```{r}
+# ggplot(long) + aes(significant, fpkm) + geom_violin() + 
+#   geom_jitter(size=0.2, alpha=0.2) + facet_grid(.~sample) +
+#   scale_y_log10() + theme_minimal() + ggtitle("Significance vs. expression")
+```
+
+```{r}
+# ggplot(long) + aes(significant, to-from) + geom_violin() + 
+#   geom_jitter(size=0.2, alpha=0.2) + facet_grid(.~sample) +
+#   scale_y_log10() + theme_minimal() + ggtitle("Significance vs. size")
+```
+
+```{r}
+# ggplot(long) + aes(significant, from) + geom_violin(adjust = .5) + 
+#   geom_jitter(size=0.2, alpha=0.2) + facet_grid(.~sample) +
+#   theme_minimal() + ggtitle("Significance vs. position")
+```
+
+## Write bed files
+
+```{r}
+# embryo %>% select(chrom, from, to, gene_id, significant) %>% 
+#   arrange(chrom, from) %>%
+#   write.table(. ,"bed/embryo.bed", quote = F, row.names = F, col.names = F, sep = "\t")
+# adult %>% select(chrom, from, to, gene_id, significant) %>% 
+#   arrange(chrom, from) %>%
+#   write.table(. ,"bed/adult.bed", quote = F, row.names = F, col.names = F, sep = "\t")
+```
+
+
+## Test area - this depends on some files I created temporarily (bedtools)
+
+This has to be re-written correctly and systematically
+
+```{r}
+# d = read.table("bed/test.adult.LargeBPdist.txt")
+# ggplot(d) + aes(V5, V10) + geom_boxplot() + geom_jitter(size = 0.2, alpha = 0.2) + ggtitle("Distance to large INV breakponts (adult)")
+# t.test(d$V10[d$V5], d$V10[!d$V5]) 
+```
+
+```{r}
+# d = read.table("bed/test.adult.DELdist.vrg-spec.txt") %>%
+#     select(gene_id = V4, chrom2 = V6, start2 = V7, end2 = V8, dist = V9) %>%
+#     merge(., adult, by = "gene_id") %>%
+#     mutate(lfc.fac = factor(lfc>0, levels=c(F,T), labels=c("balancer down","balancer up")))
+# ggplot(d) + aes(significant, dist) + geom_boxplot() + 
+#     geom_jitter(size = 0.2, alpha = 0.2) + scale_y_log10() + facet_wrap(~lfc.fac) + 
+#     ggtitle("Distance to vrg-spec. DELs  (adult)")
+```
+
+```{r}
+# d = read.table("bed/test.adult.DELdist.bal-spec.txt") %>%
+#     select(gene_id = V4, chrom2 = V6, start2 = V7, end2 = V8, dist = V9) %>%
+#     merge(., adult, by = "gene_id") %>%
+#     mutate(lfc.fac = factor(lfc>0, levels=c(F,T), labels=c("balancer down","balancer up")))
+# ggplot(d) + aes(significant, dist) + geom_boxplot() + 
+#     geom_jitter(size = 0.2, alpha = 0.2) + scale_y_log10() + facet_wrap(~lfc.fac) + 
+#     ggtitle("Distance to bal-spec. DELs  (adult)")
+```
