@@ -1,0 +1,5 @@
+.DS_Store
+.snakemake
+analysis
+data
+logs

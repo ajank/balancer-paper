@@ -1,0 +1,276 @@
+{
+  "__default__" :
+  {
+    "sbatch" : "sbatch -o logs/slurm/{rule}.{wildcards}.%j.out -e logs/slurm/{rule}.{wildcards}.%j.out",
+    "partition" : "htc",
+    "n" : "{threads}",
+    "time" : "0-8",
+    "mem" : "4G",
+    "moreoptions" : ""
+  },
+  "do_hiccup" :
+  {
+    "time" : "3-0",
+    "mem" : "200G"
+  },
+  "do_hiccup_1kb" :
+  {
+    "time" : "3-0",
+    "mem" : "300G"
+  },
+  "do_hiccup_for_juicebox" :
+  {
+    "time" : "3-0",
+    "mem" : "200G"
+  },
+  "do_juicebox_sort" :
+  {
+    "time" : "1-0",
+    "mem" : "200G"
+  },
+  "do_juicebox_process" :
+  {
+    "time" : "1-0",
+    "mem" : "200G"
+  },
+  "do_juicebox_arrowhead" :
+  {
+    "time" : "1-0",
+    "mem" : "64G"
+  },
+  "do_count_adapter_sequences" :
+  {
+    "time" : "1-0"
+  },
+  "do_bwa_mem_dm6" :
+  {
+    "mem" : "16G"
+  },
+  "do_bwa_mem_dm3" :
+  {
+    "mem" : "16G"
+  },
+  "do_samtools_namesort" :
+  {
+    "mem" : "64G"
+  },
+  "do_annotate_reads_balancer" :
+  {
+    "time" : "1-0"
+  },
+  "do_merge_reads_balancer" :
+  {
+    "time" : "1-0"
+  },
+  "do_pairsamtools_parse_dm6" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_parse_dm3" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_sort" :
+  {
+    "mem" : "200G"
+  },
+  "do_pairsamtools_stats" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_dedup" :
+  {
+    "time" : "20-0",
+    "mem" : "160G"
+  },
+  "do_pairsamtools_merge_balancer" :
+  {
+    "time" : "20-0",
+    "mem" : "160G"
+  },
+  "do_pairsamtools_merge_solexa_dm6" :
+  {
+    "time" : "1-0"
+  },
+  "do_pairsamtools_merge_solexa_dm3" :
+  {
+    "time" : "1-0"
+  },
+  "do_pairsamtools_split_to_bam" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_split_to_pairs" :
+  {
+    "time" : "3-0"
+  },
+  "do_samtools_sort" :
+  {
+    "time" : "3-0",
+    "mem" : "64G"
+  },
+  "do_samtools_index" :
+  {
+    "time" : "1-0"
+  },
+  "do_bamcoverage" :
+  {
+    "time" : "1-0",
+    "mem" : "48G"
+  },
+  "do_hicBuildMatrix_5000" :
+  {
+    "time" : "3-0",
+    "mem" : "64G"
+  },
+  "do_hicBuildMatrix_1000" :
+  {
+    "time" : "3-0",
+    "mem" : "64G"
+  },
+  "do_hicBuildMatrix_rs_dm6" :
+  {
+    "time" : "3-0",
+    "mem" : "64G"
+  },
+  "do_hicBuildMatrix_filtered_5000" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicBuildMatrix_filtered_1000" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicBuildMatrix_filtered_rs_dm6" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicBuildMatrix_filtered_rs_dm3" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_liftOver_bam" :
+  {
+    "time" : "20-0"
+  },
+  "do_hicBuildMatrix_filtered_rs_dm6bal3" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicSumMatrices_solexa" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicSumMatrices_balancer" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicMergeMatrixBins_2k" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicMergeTADbins_dm6" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicCorrectMatrix_diagnostic_plot_dm6" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicCorrectMatrix_diagnostic_plot_dm6bal3" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicCorrectMatrix_diagnostic_plot_dm3" :
+  {
+    "mem" : "16G"
+  },
+  "do_hicCorrectMatrix_correct_dm6" :
+  {
+    "mem" : "32G"
+  },
+  "do_hicCorrectMatrix_correct_dm6bal3" :
+  {
+    "mem" : "32G"
+  },
+  "do_hicCorrectMatrix_correct_dm3" :
+  {
+    "mem" : "32G"
+  },
+  "do_hicExport_dm6" :
+  {
+    "time" : "1-0",
+    "mem" : "16G"
+  },
+  "do_hicExport_dm6bal3" :
+  {
+    "time" : "1-0",
+    "mem" : "16G"
+  },
+  "do_hicExport_dm3" :
+  {
+    "time" : "1-0",
+    "mem" : "16G"
+  },
+  "do_hicPCA_dm6" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicPCA_dm6bal3" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicPCA_dm3" :
+  {
+    "time" : "3-0",
+    "mem" : "16G"
+  },
+  "do_hicFindTADs" :
+  {
+    "mem" : "16G"
+  },
+  "convert_HiCExplorer_to_rda" :
+  {
+    "mem" : "64G"
+  },
+  "convert_HiCExplorer_to_rda_1kb" :
+  {
+    "time" : "3-0",
+    "mem" : "400G"
+  },
+  "fit_distance_decay_dm6" :
+  {
+    "time" : "3-0",
+    "mem" : "200G"
+  },
+  "fit_distance_decay_dm6bal3" :
+  {
+    "time" : "3-0",
+    "mem" : "200G"
+  },
+  "process_balancer_log2FoldChange_dm6" :
+  {
+    "mem" : "64G"
+  },
+  "process_balancer_log2FoldChange_dm6bal3" :
+  {
+    "mem" : "64G"
+  },
+  "process_balancer_DESeq2_dm6" :
+  {
+    "time" : "1-0",
+    "mem" : "200G"
+  },
+  "process_balancer_DESeq2_dm6bal3" :
+  {
+    "time" : "1-0",
+    "mem" : "200G"
+  }
+}

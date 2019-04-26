@@ -1,0 +1,1016 @@
+DATASETS = {
+  "balancer": expand("HiC_DB_6-8h_{repl}", repl = ["R1", "R2"])
+}
+
+COMBINED_DATASETS = {
+  "balancer": ["HiC_DB_6-8h_combined"]
+}
+
+ALLELES = "All VRG BAL".split()
+
+genome = "dm6"
+genome_other = "dm6bal3"
+chromosomes = "chr2L chr2R chr3L chr3R chr4 chrX chrY"
+chromosomes_alt = "chr2L chr2LHet chr2R chr2RHet chr3L chr3LHet chr3R chr3RHet chr4 chrX chrXHet chrYHet"
+bwa = "/g/furlong/jankowsk/bwa/bwa"
+fasta_genome = "/g/furlong/genome/D.melanogaster/Dm6/fasta/dm6.UCSC.noMask.fa"
+snpfile = "/g/korbel/shared/projects/drosophila_balancer/analyses/readSeparation/getVCF/variants.new.vcf.gz"
+
+scratch = "scratch" + "/"
+
+import glob
+
+localrules:
+  copy_to_scratch_fastq, copy_from_scratch_bam, copy_from_scratch_hicexplorer
+
+#
+#  Default targets
+#
+
+rule balancer_multiqc:
+  input:
+    "data/balancer/qc/multiqc_report.html"
+
+rule balancer_stats:
+  input:
+    [
+      [
+        "data/balancer/bam/merged_reads/" + genome + "_" + dataset + "_All.bw",
+        "data/balancer/bam/filtered_reads/" + genome + "_" + dataset + "_All.stats",
+        "data/balancer/bam/filtered_reads/" + genome + "_" + dataset + "_All.dedup.stats",
+        "data/balancer/bam/filtered_reads/" + genome + "_" + dataset + "_" + allele + ".nodups.stats",
+        "data/balancer/bam/filtered_reads/" + genome + "_" + dataset + "_" + allele + ".nodups.nosuppl.bw",
+        "data/hicexplorer/bam/filtered_reads/" + genome + "_" + dataset + "_" + allele + "_filtered_rs.bw"
+      ] for allele in ALLELES
+    ] for dataset in DATASETS["balancer"]
+
+rule balancer_hicexplorer:
+  input:
+    [
+      list([
+        [
+          [
+            "data/hicexplorer/h5/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + ".h5",
+            "data/hicexplorer/qc/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + "_corrected.png",
+            "data/hicexplorer/h5/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + "_corrected.h5",
+            "data/hicexplorer/h5/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + "_corrected_domains.bed"
+          ] for this_genome in [genome, genome_other]
+        ] for suffix in ["filtered_200000", "filtered_100000", "filtered_50000", "filtered_20000", "filtered_10000", "filtered_5000", "filtered_2000", "filtered_1000", "filtered_rs"]
+      ] for dataset in DATASETS["balancer"] + COMBINED_DATASETS["balancer"]),
+      list([
+        [
+          [
+            "data/hicexplorer/txt/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + ".txt.gz"
+          ] for this_genome in [genome, genome_other]
+        ] for suffix in ["filtered_5000"]
+      ] for dataset in DATASETS["balancer"]),
+      list([
+        [
+          [
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_" + allele + "_" + suffix + "_corrected.rda"
+          ] for this_genome in [genome, genome_other]
+        ] for suffix in ["filtered_200000", "filtered_100000", "filtered_50000", "filtered_20000", "filtered_10000", "filtered_5000", "filtered_2000", "filtered_1000"]
+      ] for dataset in COMBINED_DATASETS["balancer"])
+    ] for allele in ALLELES + ["VRGdownBAL"]
+
+rule balancer_mergeTADs:
+  input:
+    [
+      [
+        [
+          "data/hicexplorer/h5/" + genome + "_" + dataset + "_" + allele + "_filtered_TADs.h5",
+          "data/hicexplorer/h5/" + genome + "_" + dataset + "_" + allele + "_filtered_TADs_PCA1.bedgraph",
+          "data/hicexplorer/qc/" + genome + "_" + dataset + "_" + allele + "_filtered_TADs_corrected.png",
+          "data/hicexplorer/h5/" + genome + "_" + dataset + "_" + allele + "_filtered_TADs_corrected.h5",
+          "data/hicexplorer/h5/" + genome + "_" + dataset + "_" + allele + "_filtered_TADs_corrected_PCA1.bedgraph",
+        ]
+      ] for dataset in DATASETS["balancer"] + COMBINED_DATASETS["balancer"]
+    ] for allele in ALLELES + ["VRGdownBAL"]
+
+rule balancer_DESeq2:
+  input:
+    [
+      [
+        [
+          [
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG_naive_filtered_50000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG_naive_filtered_10000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG_naive_filtered_5000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_filtered_50000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_filtered_10000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_filtered_5000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_dist_500kb_filtered_5000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_dist_200kb_filtered_5000_corrected.rda",
+            "data/hicexplorer/rda/" + this_genome + "_" + dataset + "_BAL_vs_VRG" + params + "_dist_100kb_filtered_5000_corrected.rda"
+          ]
+        ] for params in ["", "_not_across_breakpoint"]
+      ] for this_genome in [genome, genome_other]
+    ] for dataset in COMBINED_DATASETS["balancer"]
+
+rule all_balancer:
+  input:
+    rules.balancer_multiqc.input + \
+    rules.balancer_stats.input + \
+    rules.balancer_hicexplorer.input + \
+    rules.balancer_DESeq2.input
+
+rule all:
+  input:
+    rules.all_balancer.input
+
+#
+#  Hi-C read mapping, conversion to .pairsam file, filtering etc.
+#
+
+rule do_fastqc:
+  input:
+    scratch + "data/{collection}/fastq/{file}.txt.gz"
+  output:
+    "data/{collection}/qc/{file}_fastqc.zip"
+  shell:
+    """
+    fastqc --kmers 8 -o data/{wildcards.collection}/qc {input}
+    """
+
+def expand_fastqcfiles(wildcards):
+  pattern = "data/" + wildcards.collection + "/qc/" + wildcards.dataset + "_L{suffix}_fastqc.zip"
+  suffixes = glob_wildcards("data/" + wildcards.collection + "/fastq/" + wildcards.dataset.replace("_downsampled", "") + "_L{suffix}.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_fastqcfiles: empty list of suffixes"
+
+rule do_merge_fastqc:
+  input:
+    expand_fastqcfiles
+  output:
+    "data/{collection}/qc/{dataset}.list"
+  shell:
+    """
+    ls -1 {input} > {output}
+    """
+
+rule do_multiqc:
+  input:
+    lambda wildcards: expand("data/" + wildcards.collection + "/qc/{dataset}.list", dataset = DATASETS[wildcards.collection])
+  output:
+    "data/{collection}/qc/multiqc_report.html"
+  shell:
+    """
+    module load MultiQC
+    cd data/{wildcards.collection}/qc
+    rm -rf multiqc_data/
+    multiqc --interactive .
+    """
+
+rule do_bwa_mem_dm6:
+  input:
+    scratch + "data/{collection}/fastq/{file}.txt.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.bam")
+  threads:
+    16
+  shell:
+    """
+    {bwa} mem -E50 -L0 -5 -t {threads} {fasta_genome} {input} | samtools view -bT {fasta_genome} - > {output}
+    """
+
+rule do_samtools_namesort:
+  input:
+    scratch + "data/{collection}/bam/all_reads/{dataset}.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/{dataset}.ns.bam")
+  threads:
+    16
+  shell:
+    """
+    rm -f {output}.tmp.*
+    samtools sort -n -@ {threads} -m 4G -O bam {input} -o {output}
+    """
+
+rule do_add_flag1:
+  input:
+    scratch + "data/{collection}/bam/all_reads/{dataset}_1.ns.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/{dataset}_1.ns.addFlag.bam")
+  shell:
+    """
+    src/sh/addFlag.py {input} 65 > {output}
+    """
+
+rule do_add_flag2:
+  input:
+    scratch + "data/{collection}/bam/all_reads/{dataset}_2.ns.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/{dataset}_2.ns.addFlag.bam")
+  shell:
+    """
+    src/sh/addFlag.py {input} 129 > {output}
+    """
+
+rule do_samtools_merge:
+  input:
+    scratch + "data/{collection}/bam/all_reads/{dataset}_1.ns.addFlag.bam",
+    scratch + "data/{collection}/bam/all_reads/{dataset}_2.ns.addFlag.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/{dataset}.merge.bam")
+  threads:
+    4
+  shell:
+    """
+    samtools merge -n -@ {threads} {output} {input}
+    """
+
+rule do_samtools_fixmate:
+  input:
+    scratch + "data/{collection}/bam/all_reads/{dataset}.merge.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/{dataset}.merge.fixmate.bam")
+  shell:
+    """
+    samtools fixmate -p {input} {output}
+    """
+
+rule do_annotate_reads_balancer:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{dataset}.merge.fixmate.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{dataset}_All.merge.fixmate.bam")
+  shell:
+    """
+    src/sh/separator.3.py -v {snpfile} -b {input} -o {output}
+    """
+
+def expand_bamfiles_balancer(wildcards):
+  pattern = scratch + "data/balancer/bam/all_reads/" + genome + "_" + wildcards.dataset + "_L{suffix}_All.merge.fixmate.bam"
+  suffixes = glob_wildcards("data/balancer/fastq/" + wildcards.dataset + "_L{suffix}_1.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_bamfiles_balancer: empty list of suffixes"
+
+rule do_merge_reads_balancer:
+  input:
+    expand_bamfiles_balancer
+  output:
+    scratch + "data/balancer/bam/merged_reads/" + genome + "_{dataset}_All.bam"
+  threads:
+    4
+  shell:
+    """
+    samtools merge -n -@ {threads} {output} {input}
+    """
+
+rule do_pairsamtools_parse_dm6:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{dataset}.merge.fixmate.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}.pairsam.gz")
+  shell:
+    """
+    # Classify Hi-C molecules as unmapped/single-sided/multimapped/chimeric/etc
+    # and output one line per read, containing the following, separated by \\v:
+    #  * triu-flipped pairs
+    #  * read id
+    #  * type of a Hi-C molecule
+    #  * corresponding sam entries
+    pairsamtools parse --assembly {genome} -c {fasta_genome}.fai --drop-readid {input} -o {output}
+    """
+
+rule do_pairsamtools_sort:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.sorted.pairsam.gz")
+  threads:
+    16
+  shell:
+    """
+    mkdir {output}.tmp
+    # Block-sort pairs together with SAM entries
+    pairsamtools sort --nproc {threads} --memory 199G --tmpdir {output}.tmp {input} -o {output}
+    rm -rf {output}.tmp
+    """
+
+rule do_pairsamtools_stats:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.stats"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools stats -o {output} {input}
+    """
+
+rule do_pairsamtools_select:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.select.pairsam.gz")
+  shell:
+    """
+    pairsamtools select '(pair_type == "CX") or (pair_type == "LL")' {input} --output {output}
+    """
+
+def expand_pairsamfiles_balancer(wildcards):
+  pattern = scratch + "data/balancer/bam/filtered_reads/" + genome + "_" + wildcards.dataset + "_L{suffix}_All.sorted.select.pairsam.gz"
+  suffixes = glob_wildcards("data/balancer/fastq/" + wildcards.dataset + "_L{suffix}_1.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_pairsamfiles_balancer: empty list of suffixes"
+
+rule do_pairsamtools_merge_balancer:
+  input:
+    expand_pairsamfiles_balancer
+  output:
+    temp(scratch + "data/balancer/bam/filtered_reads/" + genome + "_{dataset}_All.sorted.pairsam.gz")
+  threads:
+    24
+  shell:
+    """
+    pairsamtools merge --nproc {threads} -o {output} {input}
+    """
+
+def expand_statsfiles_balancer(wildcards):
+  pattern = scratch + "data/balancer/bam/filtered_reads/" + genome + "_" + wildcards.dataset + "_L{suffix}_All.stats"
+  suffixes = glob_wildcards("data/balancer/fastq/" + wildcards.dataset + "_L{suffix}_1.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_statsfiles_balancer: empty list of suffixes"
+
+rule do_merge_stats_balancer:
+  input:
+    expand_statsfiles_balancer
+  output:
+    scratch + "data/balancer/bam/filtered_reads/" + genome + "_{dataset}_All.stats"
+  shell:
+    """
+    Rscript-3.4.0 src/R/merge_stats.R {output} {input}
+    rm {input}
+    """
+
+rule do_pairsamtools_dedup:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.sorted.pairsam.gz"
+  output:
+    nodups_pairsam = temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz"),
+    stats = scratch + "data/{collection}/bam/filtered_reads/{dataset}.dedup.stats"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools dedup {input} --max-mismatch 0 --output {output.nodups_pairsam} --stats-file {output.stats}
+    """
+
+ruleorder:
+  do_pairsamtools_dedup > do_pairsamtools_stats
+
+rule do_grep_allele_VRG:
+  input:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_All.nodups.pairsam.gz",
+  output:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_VRG.nodups.pairsam.gz",
+  threads:
+    8
+  shell:
+    """
+    pbgzip -dc -n {threads} {input} | grep "^#\|CO:Z:[A-Z0-9|,]*VRG|" | grep -v "CO:Z:[A-Z0-9|,]*BAL|" | pbgzip -c -n {threads} > {output}
+    """
+
+rule do_grep_allele_BAL:
+  input:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_All.nodups.pairsam.gz",
+  output:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_BAL.nodups.pairsam.gz",
+  threads:
+    8
+  shell:
+    """
+    pbgzip -dc -n {threads} {input} | grep "^#\|CO:Z:[A-Z0-9|,]*BAL|" | grep -v "CO:Z:[A-Z0-9|,]*VRG|" | pbgzip -c -n {threads} > {output}
+    """
+
+ruleorder:
+  do_grep_allele_BAL > do_grep_allele_VRG > do_pairsamtools_dedup
+
+rule do_pairsamtools_split_to_bam:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.bam"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools split --output-sam {output} {input}
+    """
+
+rule do_pairsamtools_split_to_pairs:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairs.gz"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools split --output-pairs {output} {input}
+    """
+
+rule do_samtools_nosuppl:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.bam",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nosuppl.bam",
+  threads:
+    2
+  shell:
+    """
+    samtools view -hF 2048 {input} | sed 's/\tSA\:Z\:[^\t]*//' | samtools view -b -o {output}
+    """
+
+rule do_samtools_sort:
+  input:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.bam",
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam"
+  threads:
+    16
+  shell:
+    """
+    rm -f {output}.tmp.*
+    samtools sort -@ {threads} -m 4G -O bam {input} -o {output}
+    """
+
+rule do_samtools_index:
+  input:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam",
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam.bai"
+  shell:
+    """
+    samtools index {input}
+    """
+
+rule do_bamcoverage:
+  input:
+    bam = scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam",
+    bai = scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam.bai"
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.bw"
+  threads:
+    16
+  shell:
+    """
+    bamCoverage --binSize 1 --numberOfProcessors {threads} -b {input.bam} -o {output} --normalizeUsing RPGC --effectiveGenomeSize 130000000
+    """
+
+# downsampling of wild-type data to match balancer data in numbers
+rule do_samtools_view_VRGdownBAL:
+  input:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_VRG.nodups.nosuppl.bam",
+  output:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}_VRGdownBAL.nodups.nosuppl.bam"
+  threads:
+    8
+  shell:
+    """
+    input={input}
+    total_VRG=$(grep -P "^total\t" "${{input%.nosuppl.bam}}.stats" | cut -f 2)
+    total_BAL=$(grep -P "^total\t" "${{input%_VRG.nodups.nosuppl.bam}}_BAL.nodups.stats" | cut -f 2)
+    ratio=$(echo "scale=10; $total_BAL / $total_VRG" | bc)
+    echo Calculated downsampling ratio: $total_BAL / $total_VRG = $ratio
+    samtools view -@ {threads} -b -s $ratio {input} -o {output}
+    """
+
+#
+#  Hi-C read processing using HiCExplorer
+#
+
+rule do_findRestSite_DpnII_dm6:
+  output:
+    "analysis/rest_site_positions_DpnII_" + genome + ".bed"
+  shell:
+    """
+    findRestSite --fasta {fasta_genome} --searchPattern GATC -o {output}
+    """
+
+rule do_liftOver_rest_sites:
+  input:
+    "analysis/rest_site_positions_{enzyme}_" + genome + ".bed"
+  output:
+    "analysis/rest_site_positions_{enzyme}_" + genome_other + ".bed"
+  shell:
+    """
+    CrossMap.py bed /g/furlong/project/39_Balancer_Hi-C/liftOver/dm6ToDm6bal3.over.chain.gz {input} {output}
+    mv {output} {output}.unsorted
+    bedtools sort -i {output}.unsorted > {output}
+    rm {output}.unsorted
+    """
+
+def dataset_restrictionEnzyme(dataset):
+  return "DpnII"
+
+def dataset_restrictionSequence(dataset):
+  return '"GATC"'
+
+def dataset_danglingSequence(dataset):
+  return '"GATC"'
+
+# For the double balancer Hi-C, split filtered BAM files into read1 and read2, and provide separate rules for handling the balancer assembly
+
+rule do_samtools_separate_read1_balancer:
+  input:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}.nodups.nosuppl.bam"
+  output:
+    temp(scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_1.nodups.nosuppl.needClearFlag235.bam")
+  threads:
+    8
+  shell:
+    """
+    samtools view -@ {threads} -bf 65 {input} -o {output}
+    """
+
+rule do_samtools_separate_read2_balancer:
+  input:
+    scratch + "data/balancer/bam/filtered_reads/{dataset}.nodups.nosuppl.bam"
+  output:
+    temp(scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_2.nodups.nosuppl.needClearFlag235.bam")
+  threads:
+    8
+  shell:
+    """
+    samtools view -@ {threads} -bf 129 {input} -o {output}
+    """
+
+rule do_clearFlag_235:
+  # clear the flag "read paired" (0x1) and all the related flags
+  input:
+    scratch + "data/hicexplorer/bam/filtered_reads/{dataset}.nodups.nosuppl.needClearFlag235.bam"
+  output:
+    temp(scratch + "data/hicexplorer/bam/filtered_reads/{dataset}.nodups.nosuppl.bam")
+  shell:
+    """
+    src/sh/clearFlag.py {input} 235 > {output}
+    """
+
+rule do_liftOver_bam:
+  input:
+    scratch + "data/hicexplorer/bam/filtered_reads/" + genome + "_{dataset}.nodups.nosuppl.bam"
+  output:
+    temp(scratch + "data/hicexplorer/bam/filtered_reads/" + genome_other + "_{dataset}.nodups.nosuppl.needClearFlag256.bam")
+  shell:
+    """
+    CrossMap.py bam -a /g/furlong/project/39_Balancer_Hi-C/liftOver/dm6ToDm6bal3.over.chain.gz {input} \
+      scratch/data/hicexplorer/bam/filtered_reads/{genome_other}_{wildcards.dataset}.nodups.nosuppl.needClearFlag256
+    """
+
+rule do_clearFlag_256:
+  # clear the flag "not primary alignment" (0x100) set by CrossMap for the reads spanning multiple alignments
+  input:
+    scratch + "data/hicexplorer/bam/filtered_reads/{dataset}.nodups.nosuppl.needClearFlag256.bam"
+  output:
+    temp(scratch + "data/hicexplorer/bam/filtered_reads/{dataset}.nodups.nosuppl.bam")
+  shell:
+    """
+    src/sh/clearFlag.py {input} 256 > {output}
+    """
+
+rule do_hicBuildMatrix_filtered_5000:
+  input:
+    bam1 = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_1.nodups.nosuppl.bam",
+    bam2 = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_2.nodups.nosuppl.bam",
+  output:
+    bam = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_filtered_5000.bam",
+    h5 = scratch + "data/hicexplorer/h5/{dataset}_filtered_5000.h5",
+    qc = "data/hicexplorer/qc/{dataset}_filtered_5000/hicQC.html"
+  threads:
+    8
+  run:
+    restrictionSequence = dataset_restrictionSequence(wildcards.dataset)
+    danglingSequence = dataset_danglingSequence(wildcards.dataset)
+    shell("hicBuildMatrix \
+      --samFiles {input.bam1} {input.bam2} --outBam {output.bam} --outFileName {output.h5} \
+      --restrictionSequence {restrictionSequence} --danglingSequence {danglingSequence} --binSize 5000 --skipDuplicationCheck \
+      --QCfolder data/hicexplorer/qc/{wildcards.dataset}_filtered_5000 \
+      --threads {threads} --inputBufferSize 100000")
+
+rule do_hicBuildMatrix_filtered_1000:
+  input:
+    bam1 = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_1.nodups.nosuppl.bam",
+    bam2 = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_2.nodups.nosuppl.bam",
+  output:
+    bam = scratch + "data/hicexplorer/bam/filtered_reads/{dataset}_filtered_1000.bam",
+    h5 = scratch + "data/hicexplorer/h5/{dataset}_filtered_1000.h5",
+    qc = "data/hicexplorer/qc/{dataset}_filtered_1000/hicQC.html"
+  threads:
+    8
+  run:
+    restrictionSequence = dataset_restrictionSequence(wildcards.dataset)
+    danglingSequence = dataset_danglingSequence(wildcards.dataset)
+    shell("hicBuildMatrix \
+      --samFiles {input.bam1} {input.bam2} --outBam {output.bam} --outFileName {output.h5} \
+      --restrictionSequence {restrictionSequence} --danglingSequence {danglingSequence} --binSize 1000 --skipDuplicationCheck \
+      --QCfolder data/hicexplorer/qc/{wildcards.dataset}_filtered_1000 \
+      --threads {threads} --inputBufferSize 100000")
+
+rule do_hicBuildMatrix_filtered_rs_dm6:
+  input:
+    lambda wildcards:
+    [
+      scratch + "data/hicexplorer/bam/filtered_reads/" + genome + "_" + wildcards.dataset + "_1.nodups.nosuppl.bam",
+      scratch + "data/hicexplorer/bam/filtered_reads/" + genome + "_" + wildcards.dataset + "_2.nodups.nosuppl.bam",
+      "analysis/rest_site_positions_" + dataset_restrictionEnzyme(wildcards.dataset) + "_" + genome + ".bed"
+    ]
+  output:
+    bam = scratch + "data/hicexplorer/bam/filtered_reads/" + genome + "_{dataset}_filtered_rs.bam",
+    h5 = scratch + "data/hicexplorer/h5/" + genome + "_{dataset}_filtered_rs.h5",
+    qc = "data/hicexplorer/qc/" + genome + "_{dataset}_filtered_rs/hicQC.html"
+  threads:
+    8
+  run:
+    restrictionSequence = dataset_restrictionSequence(wildcards.dataset)
+    danglingSequence = dataset_danglingSequence(wildcards.dataset)
+    shell("hicBuildMatrix \
+      --samFiles {input[0]} {input[1]} --outBam {output.bam} --outFileName {output.h5} \
+      --restrictionSequence {restrictionSequence} --danglingSequence {danglingSequence} --restrictionCutFile {input[2]} --skipDuplicationCheck \
+      --QCfolder data/hicexplorer/qc/{genome}_{wildcards.dataset}_filtered_rs \
+      --threads {threads} --inputBufferSize 100000")
+
+rule do_hicBuildMatrix_filtered_rs_dm6bal3:
+  input:
+    lambda wildcards:
+    [
+      scratch + "data/hicexplorer/bam/filtered_reads/" + genome_other + "_" + wildcards.dataset + "_1.nodups.nosuppl.bam",
+      scratch + "data/hicexplorer/bam/filtered_reads/" + genome_other + "_" + wildcards.dataset + "_2.nodups.nosuppl.bam",
+      "analysis/rest_site_positions_" + dataset_restrictionEnzyme(wildcards.dataset) + "_" + genome_other + ".bed"
+    ]
+  output:
+    bam = scratch + "data/hicexplorer/bam/filtered_reads/" + genome_other + "_{dataset}_filtered_rs.bam",
+    h5 = scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}_filtered_rs.h5",
+    qc = "data/hicexplorer/qc/" + genome_other + "_{dataset}_filtered_rs/hicQC.html"
+  threads:
+    8
+  run:
+    restrictionSequence = dataset_restrictionSequence(wildcards.dataset)
+    danglingSequence = dataset_danglingSequence(wildcards.dataset)
+    shell("hicBuildMatrix \
+      --samFiles {input[0]} {input[1]} --outBam {output.bam} --outFileName {output.h5} \
+      --restrictionSequence {restrictionSequence} --danglingSequence {danglingSequence} --restrictionCutFile {input[2]} --skipDuplicationCheck \
+      --QCfolder data/hicexplorer/qc/{genome_other}_{wildcards.dataset}_filtered_rs \
+      --threads {threads} --inputBufferSize 100000")
+
+# General rules for downstream analysis
+
+rule do_hicSumMatrices_balancer:
+  input:
+    scratch + "data/hicexplorer/h5/{genome}_HiC_DB_{dataset}_R1_{suffix}.h5",
+    scratch + "data/hicexplorer/h5/{genome}_HiC_DB_{dataset}_R2_{suffix}.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{genome}_HiC_DB_{dataset}_combined_{suffix}.h5"
+  shell:
+    """
+    hicSumMatrices -m {input} -o {output}
+    """
+
+rule do_hicMergeMatrixBins_2k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_1000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_2000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 2 -o {output}
+    """
+
+rule do_hicMergeMatrixBins_10k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_5000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_10000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 2 -o {output}
+    """
+
+rule do_hicMergeMatrixBins_20k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_5000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_20000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 4 -o {output}
+    """
+
+rule do_hicMergeMatrixBins_50k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_5000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_50000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 10 -o {output}
+    """
+
+rule do_hicMergeMatrixBins_100k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_5000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_100000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 20 -o {output}
+    """
+
+rule do_hicMergeMatrixBins_200k:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_5000.h5"
+  output:
+    scratch + "data/hicexplorer/h5/{dataset}_200000.h5"
+  shell:
+    """
+    hicMergeMatrixBins -m {input} --numBins 40 -o {output}
+    """
+
+rule do_hicCorrectMatrix_diagnostic_plot_dm6:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome + "_{dataset}.h5"
+  output:
+    "data/hicexplorer/qc/" + genome + "_{dataset}_corrected.png"
+  shell:
+    """
+    hicCorrectMatrix diagnostic_plot --chromosomes {chromosomes} -m {input} -o {output}
+    """
+
+rule do_hicCorrectMatrix_diagnostic_plot_dm6bal3:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}.h5"
+  output:
+    "data/hicexplorer/qc/" + genome_other + "_{dataset}_corrected.png"
+  shell:
+    """
+    hicCorrectMatrix diagnostic_plot --chromosomes {chromosomes} -m {input} -o {output}
+    """
+
+def dataset_filterThreshold(dataset):
+  return "nan nan" if (bool(re.search("_50000$", dataset)) or bool(re.search("_[125]00000$", dataset))) and not bool(re.search("_test", dataset)) else "-1.5 5"
+
+rule do_hicCorrectMatrix_correct_dm6:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome + "_{dataset}.h5"
+  output:
+    scratch + "data/hicexplorer/h5/" + genome + "_{dataset}_corrected.h5"
+  run:
+    filterThreshold = dataset_filterThreshold(wildcards.dataset)
+    shell("hicCorrectMatrix correct --chromosomes {chromosomes} -m {input} --filterThreshold {filterThreshold} -o {output}")
+
+rule do_hicCorrectMatrix_correct_dm6bal3:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}.h5"
+  output:
+    scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}_corrected.h5"
+  run:
+    filterThreshold = dataset_filterThreshold(wildcards.dataset)
+    shell("hicCorrectMatrix correct --chromosomes {chromosomes} -m {input} --filterThreshold {filterThreshold} -o {output}")
+
+ruleorder:
+  do_hicCorrectMatrix_correct_dm6 > do_hicCorrectMatrix_correct_dm6bal3 > do_hicMergeTADbins_dm6 > do_hicMergeMatrixBins_200k > do_hicMergeMatrixBins_100k > do_hicMergeMatrixBins_50k > do_hicMergeMatrixBins_20k > do_hicMergeMatrixBins_10k > do_hicMergeMatrixBins_2k > do_hicSumMatrices_balancer
+
+rule do_hicExport_dm6:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome + "_{dataset}.h5"
+  output:
+    scratch + "data/hicexplorer/txt/" + genome + "_{dataset}.txt.gz"
+  shell:
+    """
+    hicExport -i {input} --outFileName {scratch}data/hicexplorer/txt/{genome}_{wildcards.dataset}.txt \
+      --outputFormat dekker --chromosomeOrder {chromosomes}
+    mv {scratch}data/hicexplorer/txt/{genome}_{wildcards.dataset}.txt.dekker.gz {scratch}data/hicexplorer/txt/{genome}_{wildcards.dataset}.txt.gz
+    """
+
+rule do_hicExport_dm6bal3:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}.h5"
+  output:
+    scratch + "data/hicexplorer/txt/" + genome_other + "_{dataset}.txt.gz"
+  shell:
+    """
+    hicExport -i {input} --outFileName {scratch}data/hicexplorer/txt/{genome_other}_{wildcards.dataset}.txt \
+      --outputFormat dekker --chromosomeOrder {chromosomes}
+    mv {scratch}data/hicexplorer/txt/{genome_other}_{wildcards.dataset}.txt.dekker.gz {scratch}data/hicexplorer/txt/{genome_other}_{wildcards.dataset}.txt.gz
+    """
+
+rule do_hicPCA_dm6:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome + "_{dataset}.h5"
+  output:
+    pca1 = "data/hicexplorer/h5/" + genome + "_{dataset}_PCA1.bedgraph",
+    pca2 = "data/hicexplorer/h5/" + genome + "_{dataset}_PCA2.bedgraph"
+  shell:
+    """
+    hicPCA -m {input} -o {output.pca1} {output.pca2} --chromosomes {chromosomes}
+    """
+
+rule do_hicPCA_dm6bal3:
+  input:
+    scratch + "data/hicexplorer/h5/" + genome_other + "_{dataset}.h5"
+  output:
+    pca1 = "data/hicexplorer/h5/" + genome_other + "_{dataset}_PCA1.bedgraph",
+    pca2 = "data/hicexplorer/h5/" + genome_other + "_{dataset}_PCA2.bedgraph"
+  shell:
+    """
+    hicPCA -m {input} -o {output.pca1} {output.pca2} --chromosomes {chromosomes}
+    """
+
+rule do_hicFindTADs:
+  input:
+    scratch + "data/hicexplorer/h5/{dataset}_corrected.h5"
+  output:
+    "data/hicexplorer/h5/{dataset}_corrected_domains.bed"
+  threads:
+    16
+  shell:
+    """
+    hicFindTADs -m {input} --outPrefix data/hicexplorer/h5/{wildcards.dataset}_corrected \
+      --correctForMultipleTesting=fdr --numberOfProcessors {threads}
+    """
+
+#
+#  Convert HiCExplorer output to Rdata files
+#
+
+rule convert_HiCExplorer_to_rda:
+  input:
+    fraw = scratch + "data/hicexplorer/txt/{dataset}.txt.gz",
+    fnorm = scratch + "data/hicexplorer/txt/{dataset}_corrected.txt.gz"
+  output:
+    scratch + "data/hicexplorer/rda/{dataset}_corrected.rda"
+  threads:
+    8
+  shell:
+    """
+    Rscript-3.4.0 src/R/convert_HiCExplorer_to_rda.R {input.fnorm} {output}
+    """
+
+rule convert_HiCExplorer_to_rda_1kb:
+  input:
+    fraw = scratch + "data/hicexplorer/txt/{dataset}_1000.txt.gz",
+    fnorm = scratch + "data/hicexplorer/txt/{dataset}_1000_corrected.txt.gz"
+  output:
+    scratch + "data/hicexplorer/rda/{dataset}_1000_corrected.rda"
+  threads:
+    8
+  shell:
+    """
+    Rscript-3.4.0 src/R/convert_HiCExplorer_to_rda.R {input.fnorm} {output}
+    """
+
+ruleorder:
+  convert_HiCExplorer_to_rda_1kb > convert_HiCExplorer_to_rda
+
+#
+#  Fitting distance decay trend
+#
+
+rule fit_distance_decay_dm6:
+  input:
+    "data/hicexplorer/txt/" + genome + "_{dataset}_filtered_{bin_size}.txt.gz"
+  output:
+    "data/distance_decay/decay_" + genome + "_{dataset}_filtered_{bin_size}.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/fit_distance_decay.R {genome} {wildcards.dataset} {wildcards.bin_size}
+    """
+
+rule fit_distance_decay_dm6bal3:
+  input:
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_filtered_{bin_size}.txt.gz"
+  output:
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_filtered_{bin_size}.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/fit_distance_decay.R {genome_other} {wildcards.dataset} {wildcards.bin_size}
+    """
+
+#
+#  Aggregate information on genomic variation in balancer and wild-type
+#
+
+rule balancer_vcf_to_tab:
+  output:
+    "analysis/balancer/SNVs.tab"
+  shell:
+    "src/sh/balancer_vcf_to_tab.sh {snpfile} {fasta_genome} {output}"
+
+#
+#  Balancer/wild-type DESeq2
+#
+
+rule process_balancer_log2FoldChange_dm6:
+  input:
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_combined_VRG_filtered_{bin_size}_corrected.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R1_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R2_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_combined_BAL_filtered_{bin_size}_corrected.txt.gz",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.rda"
+  output:
+    "scratch/data/hicexplorer/rda/" + genome + "_{dataset}_combined_BAL_vs_VRG_naive_filtered_{bin_size}_corrected.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/process_balancer_log2FoldChange.R {wildcards.dataset} {genome} {wildcards.bin_size}
+    """
+
+rule process_balancer_log2FoldChange_dm6bal3:
+  input:
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R1_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R2_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_combined_VRG_filtered_{bin_size}_corrected.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_combined_BAL_filtered_{bin_size}_corrected.txt.gz",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.rda"
+  output:
+    "scratch/data/hicexplorer/rda/" + genome_other + "_{dataset}_combined_BAL_vs_VRG_naive_filtered_{bin_size}_corrected.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/process_balancer_log2FoldChange.R {wildcards.dataset} {genome_other} {wildcards.bin_size}
+    """
+
+rule process_balancer_DESeq2_dm6:
+  input:
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_combined_VRG_filtered_{bin_size}_corrected.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R1_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_R2_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome + "_{dataset}_combined_BAL_filtered_{bin_size}_corrected.txt.gz",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.rda"
+  output:
+    "scratch/data/hicexplorer/rda/" + genome + "_{dataset}_combined_BAL_vs_VRG_{params}_{bin_size}_corrected.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/process_balancer_DESeq2.R {wildcards.dataset} {genome} {wildcards.bin_size} {output}
+    """
+
+rule process_balancer_DESeq2_dm6bal3:
+  input:
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R1_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R2_VRG_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_combined_VRG_filtered_{bin_size}_corrected.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.txt.gz",
+    "data/hicexplorer/txt/" + genome_other + "_{dataset}_combined_BAL_filtered_{bin_size}_corrected.txt.gz",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R1_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome + "_{dataset}_R2_VRG_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R1_BAL_filtered_{bin_size}.rda",
+    "data/distance_decay/decay_" + genome_other + "_{dataset}_R2_BAL_filtered_{bin_size}.rda"
+  output:
+    "scratch/data/hicexplorer/rda/" + genome_other + "_{dataset}_combined_BAL_vs_VRG_{params}_{bin_size}_corrected.rda"
+  shell:
+    """
+    Rscript-3.4.0 src/R/process_balancer_DESeq2.R {wildcards.dataset} {genome_other} {wildcards.bin_size} {output}
+    """
+
+ruleorder:
+  process_balancer_log2FoldChange_dm6 > process_balancer_log2FoldChange_dm6bal3 > process_balancer_DESeq2_dm6 > process_balancer_DESeq2_dm6bal3
+
+#
+#  File management: copy files to/from /scratch, with bandwidth limit 150 MB/s
+#
+
+rule copy_to_scratch_fastq:
+  input:
+    "data/{collection}/fastq/{somefile}"
+  output:
+    temp(scratch + "data/{collection}/fastq/{somefile}")
+  shell:
+    """
+    mkdir -p {scratch}
+    ( flock 200; rsync -L -au -vh --bwlimit=150000 {input} {output} ) 200> {scratch}lock
+    """
+
+rule copy_from_scratch_bam:
+  input:
+    scratch + "data/{collection}/bam/{somefile}"
+  output:
+    "data/{collection}/bam/{somefile}"
+  shell:
+    """
+    ( flock 200; rsync -au -vh --bwlimit=150000 {input} {output} ) 200> {scratch}lock
+    """
+
+rule copy_from_scratch_hicexplorer:
+  input:
+    scratch + "data/hicexplorer/{somefile}"
+  output:
+    "data/hicexplorer/{somefile}"
+  shell:
+    """
+    ( flock 200; rsync -au -vh --bwlimit=150000 {input} {output} ) 200> {scratch}lock
+    """
+
+ruleorder:
+  copy_from_scratch_hicexplorer > copy_from_scratch_bam
