@@ -1,0 +1,72 @@
+{
+  "__default__" :
+  {
+    "sbatch" : "sbatch -o logs/slurm/{rule}.{wildcards}.%j.out -e logs/slurm/{rule}.{wildcards}.%j.out",
+    "partition" : "htc",
+    "n" : "{threads}",
+    "time" : "0-8",
+    "mem" : "4G",
+    "moreoptions" : ""
+  },
+  "do_bwa_mem" :
+  {
+    "mem" : "16G"
+  },
+  "do_samtools_namesort" :
+  {
+    "mem" : "64G"
+  },
+  "do_pairsamtools_parse" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_sort" :
+  {
+    "mem" : "200G"
+  },
+  "do_pairsamtools_select" :
+  {
+    "time" : "3-0"
+  },
+  "do_pairsamtools_dedup" :
+  {
+    "time" : "20-0",
+    "mem" : "200G"
+  },
+  "do_samtools_sort" :
+  {
+    "mem" : "64G"
+  },
+  "do_bamcoverage" :
+  {
+    "mem" : "48G"
+  },
+  "do_hicBuildMatrix_filtered_rs" :
+  {
+    "mem" : "16G"
+  },
+  "do_chicago_balancer_cap2" :
+  {
+    "mem" : "16G"
+  },
+  "do_chicago_TS_Capture" :
+  {
+    "mem" : "16G"
+  },
+  "do_fragment_distance_balancer_cap2" :
+  {
+    "mem" : "32G"
+  },
+  "do_process_DESeq2_balancer_cap2" :
+  {
+    "mem" : "24G"
+  },
+  "do_extract_DESeq2_tracks_balancer_cap2" :
+  {
+    "mem" : "24G"
+  },
+  "do_combine_annotations_TS_Capture" :
+  {
+    "mem" : "16G"
+  }
+}

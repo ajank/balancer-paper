@@ -1,0 +1,717 @@
+DATASETS = {
+  "balancer_cap2": expand("DBal_BAL_N1_4-8h_CAP2_{repl}", repl = ["Rep1", "Rep2"])
+}
+
+COMBINED_DATASETS = {
+  "balancer_cap2": expand("DBal_BAL_N1_4-8h_CAP2_Rep1Rep2")
+}
+
+ALLELES = ["All", "VRG", "BAL"]
+
+genome = "dm6"
+genome_other = "dm6bal3"
+bwa = "/g/furlong/jankowsk/bwa/bwa"
+fasta_genome = "/g/furlong/genome/D.melanogaster/Dm6/fasta/dm6.UCSC.noMask.fa"
+snpfile = "/g/korbel/shared/projects/drosophila_balancer/analyses/readSeparation/getVCF/variants.new.vcf.gz"
+scratch = "scratch" + "/"
+
+import glob
+
+localrules:
+  copy_to_scratch_fastq, copy_from_scratch_bam, do_create_zipfile_balancer_cap2, dclean
+
+#
+#  Default targets
+#
+
+rule balancer_cap2_multiqc:
+  input:
+    "data/balancer_cap2/qc/multiqc_report.html"
+
+rule balancer_cap2_stats:
+  input:
+    [
+      [
+        expand([
+          "data/balancer_cap2/bam/merged_reads/" + genome + "_{dataset}_All.bw",
+          "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_All.stats",
+          "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_All.dedup.stats",
+          "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_{allele}.nodups.stats",
+          "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_{allele}.nodups.nosuppl.bw",
+          "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_{allele}_filtered_rs.bw"
+        ], dataset = dataset, allele = allele)
+      ] for allele in ALLELES
+    ] for dataset in DATASETS["balancer_cap2"]
+
+rule balancer_cap2_combined_stats:
+  input:
+    "analysis/balancer_cap2/contacts_all/combined_stats.tsv"
+
+rule balancer_cap2_chicago:
+  input:
+    "analysis/balancer_cap2/contacts_all/plot_bait_xyplots.pdf",
+    "analysis/balancer_cap2/contacts_noARS_all/plot_bait_xyplots.pdf",
+    "analysis/balancer_cap2/contacts_VRGdownBAL_all/plot_bait_xyplots.pdf",
+    "analysis/balancer_cap2/contacts_VRGdownBAL_noARS_all/plot_bait_xyplots.pdf"
+
+rule balancer_cap2_tracks:
+  input:
+    "analysis/balancer_cap2/igv_sessions.zip"
+
+rule all_balancer_cap2:
+  input:
+    rules.balancer_cap2_multiqc.input + \
+    rules.balancer_cap2_stats.input + \
+    rules.balancer_cap2_combined_stats.input + \
+    rules.balancer_cap2_chicago.input + \
+    rules.balancer_cap2_tracks.input
+
+rule all:
+  input:
+    rules.all_balancer_cap2.input
+
+#
+#  Capture-C read mapping, conversion to .pairsam file, filtering etc.
+#
+
+rule do_fastqc:
+  input:
+    scratch + "data/{collection}/fastq/{file}.txt.gz"
+  output:
+    "data/{collection}/qc/{file}_fastqc.zip"
+  shell:
+    """
+    fastqc --kmers 8 -o data/{wildcards.collection}/qc {input}
+    """
+
+def expand_fastqcfiles(wildcards):
+  pattern = "data/" + wildcards.collection + "/qc/" + wildcards.dataset + "{suffix}_fastqc.zip"
+  suffixes = glob_wildcards("data/" + wildcards.collection + "/fastq/" + wildcards.dataset + "{suffix}.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_fastqcfiles: empty list of suffixes"
+
+rule do_merge_fastqc:
+  input:
+    expand_fastqcfiles
+  output:
+    "data/{collection}/qc/{dataset}.list"
+  shell:
+    """
+    ls -1 {input} > {output}
+    """
+
+rule do_multiqc:
+  input:
+    lambda wildcards: expand("data/" + wildcards.collection + "/qc/{dataset}.list", dataset = DATASETS[wildcards.collection])
+  output:
+    "data/{collection}/qc/multiqc_report.html"
+  shell:
+    """
+    module load MultiQC
+    cd data/{wildcards.collection}/qc
+    rm -rf multiqc_data/
+    multiqc --interactive .
+    """
+
+rule do_bwa_mem:
+  input:
+    scratch + "data/{collection}/fastq/{file}.txt.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.bam")
+  threads:
+    16
+  shell:
+    """
+    {bwa} mem -E50 -L0 -5 -t {threads} {fasta_genome} {input} | samtools view -bT {fasta_genome} - > {output}
+    """
+
+    # if [[ "$collection" == "precap" || "$collection" == "precap2" ]]; then
+    #   # short "precap" reads mapped using bwa aln
+    #   sai="$2.sai"
+    #   $bwa aln -t $threads $genome $1 > $sai.part && mv $sai.part $sai
+    #   bwa samse $genome $sai $1 | samtools view -bT $genome - > $2.part && mv $2.part $2
+    #   rm $sai
+    # else
+    #   # cap1 and cap2 mapped using bwa mem
+    # fi
+
+rule do_samtools_namesort:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.ns.bam")
+  threads:
+    16
+  shell:
+    """
+    rm -f {output}.tmp.*
+    samtools sort -n -@ {threads} -m 4G -O bam {input} -o {output}
+    """
+
+rule do_add_flag1:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_1.ns.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_1.ns.addFlag.bam")
+  shell:
+    """
+    src/sh/addFlag.py {input} 65 > {output}
+    """
+
+rule do_add_flag2:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_2.ns.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_2.ns.addFlag.bam")
+  shell:
+    """
+    src/sh/addFlag.py {input} 129 > {output}
+    """
+
+rule do_merge_paired_end:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_1.ns.addFlag.bam",
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_2.ns.addFlag.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.merge.bam")
+  threads:
+    4
+  shell:
+    """
+    samtools merge -n -@ {threads} {output} {input}
+    """
+
+rule do_samtools_fixmate:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.merge.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.merge.fixmate.bam")
+  shell:
+    """
+    samtools fixmate -p {input} {output}
+    """
+
+rule do_annotate_reads:
+  input:
+    scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}.merge.fixmate.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/all_reads/" + genome + "_{file}_All.merge.fixmate.bam")
+  shell:
+    """
+    src/sh/separator.3.py -v {snpfile} -b {input} -o {output}
+    """
+
+def expand_bamfiles_balancer_cap2(wildcards):
+  pattern = scratch + "data/balancer_cap2/bam/all_reads/" + genome + "_" + wildcards.dataset + "{suffix}_All.merge.fixmate.bam"
+  suffixes = glob_wildcards("data/balancer_cap2/fastq/" + wildcards.dataset + "{suffix}_1.txt.gz").suffix
+  return expand(pattern, suffix = suffixes) if suffixes else "expand_bamfiles_balancer_cap2: empty list of suffixes"
+
+rule do_merge_reads_balancer_cap2:
+  input:
+    expand_bamfiles_balancer_cap2
+  output:
+    scratch + "data/balancer_cap2/bam/merged_reads/" + genome + "_{dataset}_All.bam"
+  threads:
+    4
+  shell:
+    """
+    samtools merge -n -@ {threads} {output} {input}
+    """
+
+rule do_pairsamtools_parse:
+  input:
+    scratch + "data/{collection}/bam/merged_reads/" + genome + "_{dataset}.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}.pairsam.gz")
+  shell:
+    """
+    # Classify Hi-C molecules as unmapped/single-sided/multimapped/chimeric/etc
+    # and output one line per read, containing the following, separated by \\v:
+    #  * triu-flipped pairs
+    #  * read id
+    #  * type of a Hi-C molecule
+    #  * corresponding sam entries
+    pairsamtools parse --assembly {genome} -c {fasta_genome}.fai {input} -o {output}
+    """
+
+rule do_pairsamtools_sort:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.sorted.pairsam.gz")
+  threads:
+    16
+  shell:
+    """
+    mkdir {output}.tmp
+    # Block-sort pairs together with SAM entries
+    pairsamtools sort --nproc {threads} --memory 199G --tmpdir {output}.tmp {input} -o {output}
+    rm -rf {output}.tmp
+    """
+
+# sorted pairsam file is more than a pairsam file created from a sorted BAM file
+ruleorder:
+  do_pairsamtools_sort > do_pairsamtools_parse
+
+rule do_pairsamtools_stats:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.stats"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools stats -o {output} {input}
+    """
+
+rule do_pairsamtools_select:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.pairsam.gz"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.select.pairsam.gz")
+  shell:
+    """
+    pairsamtools select '(pair_type == "CX") or (pair_type == "LL")' {input} --output {output}
+    """
+
+rule do_pairsamtools_dedup:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.sorted.select.pairsam.gz"
+  output:
+    nodups_pairsam = temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz"),
+    stats = scratch + "data/{collection}/bam/filtered_reads/{dataset}.dedup.stats"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools dedup {input} --max-mismatch 0 --output {output.nodups_pairsam} --stats-file {output.stats}
+    """
+
+ruleorder:
+  do_pairsamtools_dedup > do_pairsamtools_stats
+
+rule do_grep_allele_VRG:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}_All.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}_VRG.nodups.pairsam.gz",
+  threads:
+    8
+  shell:
+    """
+    pbgzip -dc -n {threads} {input} | grep "^#\|CO:Z:[A-Z0-9|,]*VRG|" | grep -v "CO:Z:[A-Z0-9|,]*BAL|" | pbgzip -c -n {threads} > {output}
+    """
+
+rule do_grep_allele_BAL:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}_All.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}_BAL.nodups.pairsam.gz",
+  threads:
+    8
+  shell:
+    """
+    pbgzip -dc -n {threads} {input} | grep "^#\|CO:Z:[A-Z0-9|,]*BAL|" | grep -v "CO:Z:[A-Z0-9|,]*VRG|" | pbgzip -c -n {threads} > {output}
+    """
+
+ruleorder:
+  do_grep_allele_BAL > do_grep_allele_VRG > do_pairsamtools_dedup > do_pairsamtools_parse
+
+rule do_pairsamtools_split_to_bam:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.bam"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools split --output-sam {output} {input}
+    """
+
+rule do_pairsamtools_split_to_pairs:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairsam.gz",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.pairs.gz"
+  threads:
+    8
+  shell:
+    """
+    pairsamtools split --output-pairs {output} {input}
+    """
+
+rule do_samtools_nosuppl:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.bam",
+  output:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nosuppl.bam",
+  threads:
+    2
+  shell:
+    """
+    samtools view -hF 2048 {input} | sed 's/\tSA\:Z\:[^\t]*//' | samtools view -b -o {output}
+    """
+
+rule do_samtools_sort:
+  input:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.bam",
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam"
+  threads:
+    16
+  shell:
+    """
+    rm -f {output}.tmp.*
+    samtools sort -@ {threads} -m 4G -O bam {input} -o {output}
+    """
+
+rule do_samtools_index:
+  input:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam",
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam.bai"
+  shell:
+    """
+    samtools index {input}
+    """
+
+rule do_bamcoverage:
+  input:
+    bam = scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam",
+    bai = scratch + "data/{collection}/bam/{subdir}/{dataset}.sorted.bam.bai"
+  output:
+    scratch + "data/{collection}/bam/{subdir}/{dataset}.bw"
+  threads:
+    16
+  shell:
+    """
+    bamCoverage --binSize 1 --numberOfProcessors {threads} -b {input.bam} -o {output} --normalizeUsing RPGC --effectiveGenomeSize 130000000
+    """
+
+#
+#  Hi-C read processing using HiCExplorer
+#
+
+rule do_findRestSite:
+  output:
+    "analysis/rest_site_positions_DpnII_" + genome + ".bed"
+  shell:
+    """
+    findRestSite --fasta {fasta_genome} --searchPattern GATC -o {output}
+    """
+
+rule do_samtools_separate_read1:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.nosuppl.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}_1.nodups.nosuppl.needClearFlag235.bam")
+  threads:
+    8
+  shell:
+    """
+    samtools view -@ {threads} -bf 65 {input} -o {output}
+    """
+
+rule do_samtools_separate_read2:
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.nosuppl.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}_2.nodups.nosuppl.needClearFlag235.bam")
+  threads:
+    8
+  shell:
+    """
+    samtools view -@ {threads} -bf 129 {input} -o {output}
+    """
+
+rule do_clearFlag_235:
+  # clear the flag "read paired" (0x1) and all the related flags
+  input:
+    scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.nosuppl.needClearFlag235.bam"
+  output:
+    temp(scratch + "data/{collection}/bam/filtered_reads/{dataset}.nodups.nosuppl.bam")
+  shell:
+    """
+    src/sh/clearFlag.py {input} 235 > {output}
+    """
+
+rule do_hicBuildMatrix_filtered_rs:
+  input:
+    bam1 = scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}_1.nodups.nosuppl.bam",
+    bam2 = scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}_2.nodups.nosuppl.bam",
+    rs = "analysis/rest_site_positions_DpnII_" + genome + ".bed"
+  output:
+    bam = scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}_filtered_rs.bam",
+    h5 = scratch + "data/{collection}/h5/" + genome + "_{dataset}_filtered_rs.h5",
+    qc = "data/{collection}/qc/" + genome + "_{dataset}_filtered_rs/QC_table.txt"
+  threads:
+    8
+  shell:
+    """
+    hicBuildMatrix \
+      --samFiles {input.bam1} {input.bam2} --outBam {output.bam} --outFileName {output.h5} \
+      --restrictionSequence GATC --danglingSequence GATC --restrictionCutFile {input.rs} --skipDuplicationCheck \
+      --QCfolder data/{wildcards.collection}/qc/{genome}_{wildcards.dataset}_filtered_rs \
+      --threads {threads} --inputBufferSize 100000
+    """
+
+#
+#  CHiCAGO input file preparation and wrapper
+#
+
+rule do_digest_DpnII:
+  output:
+    temp("analysis/digest_DpnII_" + genome + ".txt")
+  shell:
+    """
+    src/sh/digest_DpnII.sh {genome}
+    """
+
+rule do_process_DpnII:
+  input:
+    "analysis/digest_DpnII_" + genome + ".txt"
+  output:
+    "analysis/digest_DpnII_" + genome + ".tab",
+    "analysis/digest_DpnII_" + genome + ".bed",
+    "analysis/digest_DpnII_" + genome + ".Rdata"
+  shell:
+    """
+    Rscript src/R/process_DpnII.R {genome}
+    """
+
+rule do_annotate_DpnII:
+  input:
+    "hiccup/annotateDpnII_balancer",
+    "analysis/digest_DpnII_" + genome + ".tab"
+  output:
+    "analysis/digest_DpnII_" + genome + "_balancer.tab"
+  shell:
+    """
+    hiccup/annotateDpnII_balancer
+    """
+
+rule do_extract_balancer_allele_specific_variation:
+  input:
+    "analysis/digest_DpnII_" + genome + "_balancer.tab",
+  output:
+    "analysis/balancer/genes_allele_specific_CNV.tab",
+    "analysis/digest_DpnII_" + genome + "_balancer_allele_specific_variation.tab",
+    "analysis/balancer_cap2/annotations/DpnII_" + genome + "_balancer_affected_RS.bed",
+    "analysis/balancer_cap2/annotations/DpnII_" + genome + "_balancer_affected_CNV.bed"
+  shell:
+    """
+    Rscript src/R/extract_balancer_allele_specific_variation.R
+    """
+
+rule do_name_balancer_promoters:
+  input:
+    "analysis/digest_DpnII_" + genome + ".Rdata",
+    "analysis/balancer/promoters_balancer.Rdata"
+  output:
+    "analysis/balancer_cap2/viewpoints.Rdata",
+    "analysis/balancer_cap2/viewpoints.gff",
+    "analysis/balancer_cap2/viewpoints.bed"
+  shell:
+    """
+    Rscript src/R/name_promoters_balancer.R
+    """
+
+rule do_make_chicago_design_files_balancer_cap2:
+  input:
+    "analysis/digest_DpnII_" + genome + "_balancer_allele_specific_variation.tab",
+    "analysis/balancer_cap2/viewpoints.Rdata"
+  output:
+    settingsfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.settingsFile",
+    baitmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.baitmap",
+    digestrmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.rmap",
+    nbaitsperbinfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.nbpb",
+    nperbinfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.npb",
+    proxoefile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.poe"
+  shell:
+    """
+    Rscript src/R/CHiCAGO_makeDesignFiles_balancer_cap2.R analysis/balancer_cap2/contacts_{wildcards.suffix}/design
+    """
+
+rule do_bam2chicago:
+  input:
+    bamfile = scratch + "data/{collection}/bam/filtered_reads/" + genome + "_{dataset}_filtered_rs.bam",
+    settingsfile = "analysis/{collection}/{suffix}/design/" + genome + "_DpnII.settingsFile",
+    baitmapfile = "analysis/{collection}/{suffix}/design/" + genome + "_DpnII.baitmap",
+    digestrmapfile = "analysis/{collection}/{suffix}/design/" + genome + "_DpnII.rmap"
+  output:
+    scratch + "data/{collection}/{suffix}/" + genome + "_{dataset}.chinput.gz",
+    scratch + "data/{collection}/{suffix}/" + genome + "_{dataset}_bait2bait.bedpe.gz",
+    stats = "analysis/{collection}/{suffix}/" + genome + "_{dataset}.bam2chicago.stats"
+  shell:
+    """
+    # check if the input file is intact (bam2chicago.sh silently ignores read errors!)
+    if samtools flagstat {input.bamfile} | grep "operation failed"; then
+      echo 'Corrupted BAM file!'
+    fi
+
+    tmpdir={scratch}data/{wildcards.collection}/{wildcards.suffix}/{genome}_{wildcards.dataset}
+    /g/furlong/jankowsk/chicago/chicagoTools/bam2chicago.sh {input.bamfile} {input.baitmapfile} {input.digestrmapfile} $tmpdir nodelete
+
+    for f in $tmpdir/*_filtered_rs_*.bedpe; do
+      echo -e "$f\t"$(cut -f 1,4 $f | wc -l)
+      echo -e "${{f}}_cis\t"$(cut -f 1,4 $f | awk '{{ if ($1 == $2) print }}' | wc -l)
+      echo -e "${{f}}_trans\t"$(cut -f 1,4 $f | awk '{{ if ($1 != $2) print }}' | wc -l)
+    done | sed -e "s/.*_filtered_rs_//; s/.bedpe//" > {output.stats}
+
+    rm $tmpdir/*_filtered_rs_*.bedpe
+    gzip -f $tmpdir/*.chinput $tmpdir/*.bedpe
+    mv $tmpdir/{genome}_{wildcards.dataset}.chinput.gz {scratch}data/{wildcards.collection}/{wildcards.suffix}/
+    mv $tmpdir/{genome}_{wildcards.dataset}_bait2bait.bedpe.gz {scratch}data/{wildcards.collection}/{wildcards.suffix}/
+    rmdir $tmpdir
+    """
+
+rule do_extract_statistics_balancer_cap2:
+  input:
+    lambda wildcards:
+      expand([
+        "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_All.stats",
+        "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_All.dedup.stats",
+        "data/balancer_cap2/bam/filtered_reads/" + genome + "_{dataset}_All.nodups.stats",
+        "data/balancer_cap2/qc/" + genome + "_{dataset}_All_filtered_rs/QC_table.txt",
+        "analysis/balancer_cap2/" + wildcards.suffix + "/" + genome + "_{dataset}_All.bam2chicago.stats"
+      ], dataset = DATASETS["balancer_cap2"])
+  output:
+    "analysis/balancer_cap2/{suffix}/combined_stats.tsv"
+  shell:
+    """
+    Rscript src/R/extract_statistics.R balancer_cap2 {wildcards.suffix}
+    """
+
+rule do_chicago_balancer_cap2:
+  input:
+    scratch + "data/balancer_cap2/{suffix}/" + genome + "_{dataset}_Rep{rep1}_{allele}.chinput.gz",
+    scratch + "data/balancer_cap2/{suffix}/" + genome + "_{dataset}_Rep{rep2}_{allele}.chinput.gz",
+    settingsfile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.settingsFile",
+    baitmapfile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.baitmap",
+    digestrmapfile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.rmap",
+    nbaitsperbinfile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.nbpb",
+    nperbinfile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.npb",
+    proxoefile = "analysis/balancer_cap2/{suffix}/design/" + genome + "_DpnII.poe"
+  output:
+    "analysis/balancer_cap2/{suffix}/" + genome + "_{dataset}_Rep{rep1}Rep{rep2}_{allele}.Rds"
+  shell:
+    """
+    Rscript src/R/CHiCAGO_pipeline.R {genome}_{wildcards.dataset} Rep{wildcards.rep1}Rep{wildcards.rep2} _{wildcards.allele} analysis/balancer_cap2/{wildcards.suffix}/design {scratch}data/balancer_cap2/{wildcards.suffix} analysis/balancer_cap2/{wildcards.suffix}
+    """
+
+rule do_fragment_distance_balancer_cap2:
+  input:
+    baitmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.baitmap",
+    digestrmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.rmap"
+  output:
+    "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_" + genome_other + "_DpnII_fragment_distance.Rdata"
+  shell:
+    """
+    Rscript src/R/fragment_distance_balancer_cap2.R analysis/balancer_cap2/contacts_{wildcards.suffix}/design
+    """
+
+rule do_combine_annotations_balancer_cap2:
+  output:
+    "analysis/balancer_cap2/annotations/MesoCRM_dm6_Nature_Zinzen2009.gff",
+    "analysis/balancer_cap2/annotations/CAD4_plus_vienna_minus_inactive_corrected_names_dm6.bed",
+    "analysis/balancer_cap2/annotations/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed"
+    # and many other annotations
+  shell:
+    """
+    src/sh/combine_annotations_balancer_cap2.sh
+    """
+
+rule do_process_DESeq2_balancer_cap2:
+  input:
+    expand("analysis/balancer_cap2/contacts_{{suffix}}/" + genome + "_{dataset}_VRG.Rds",
+      dataset = COMBINED_DATASETS["balancer_cap2"]),
+    expand("analysis/balancer_cap2/contacts_{{suffix}}/" + genome + "_{dataset}_BAL.Rds",
+      dataset = COMBINED_DATASETS["balancer_cap2"]),
+    expand("analysis/balancer_cap2/contacts_{{suffix}}/" + genome + "_{dataset}_All.Rds",
+      dataset = COMBINED_DATASETS["balancer_cap2"]),
+    baitmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.baitmap",
+    digestrmapfile = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_DpnII.rmap",
+    fragdist = "analysis/balancer_cap2/contacts_{suffix}/design/" + genome + "_" + genome_other + "_DpnII_fragment_distance.Rdata",
+    MesoCRMs = "analysis/balancer_cap2/annotations/MesoCRM_dm6_Nature_Zinzen2009.gff",
+    CAD4 = "analysis/balancer_cap2/annotations/CAD4_plus_vienna_minus_inactive_corrected_names_dm6.bed",
+    DHS = "analysis/balancer_cap2/annotations/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed"
+  output:
+    "analysis/balancer_cap2/contacts_{suffix}/DESeq2_interactions.Rdata"
+  shell:
+    """
+    Rscript src/R/process_DESeq2_balancer_cap2.R analysis/balancer_cap2/contacts_{wildcards.suffix}/design analysis/balancer_cap2/contacts_{wildcards.suffix}
+    """
+
+rule do_extract_DESeq2_tracks_balancer_cap2:
+  input:
+    "analysis/balancer_cap2/igv_session_template.xml",
+    "analysis/balancer_cap2/contacts_{suffix}/DESeq2_interactions.Rdata"
+  output:
+    "analysis/balancer_cap2/contacts_{suffix}/igv_sessions/sessions.list"
+  shell:
+    """
+    Rscript src/R/extract_DESeq2_tracks_balancer_cap2.R analysis/balancer_cap2/contacts_{wildcards.suffix}
+    touch {output}
+    """
+
+rule do_create_zipfile_balancer_cap2:
+  input:
+    "analysis/balancer_cap2/annotations/CAD4_plus_vienna_minus_inactive_corrected_names_dm6.bed",
+    # and many other annotations
+    "analysis/balancer_cap2/contacts_all/igv_sessions/sessions.list",
+    "analysis/balancer_cap2/contacts_noARS_all/igv_sessions/sessions.list",
+    "analysis/balancer_cap2/contacts_min40bp/igv_sessions/sessions.list"
+  output:
+    "analysis/balancer_cap2/igv_sessions.zip"
+  shell:
+    """
+    src/sh/create_zipfile_balancer_cap2.sh
+    """
+
+rule do_plot_DESeq2_stats:
+  input:
+    "analysis/{collection}/contacts_{suffix}/DESeq2_interactions.Rdata"
+  output:
+    "analysis/{collection}/contacts_{suffix}/plot_bait_stats.pdf",
+    "analysis/{collection}/contacts_{suffix}/plot_bait_xyplots.pdf",
+    "analysis/{collection}/contacts_{suffix}/plot_interaction_stats.pdf"
+  shell:
+    """
+    Rscript src/R/plot_DESeq2_stats.R analysis/{wildcards.collection}/contacts_{wildcards.suffix}
+    """
+
+#
+#  File management: copy files to/from /scratch, with bandwidth limit 150 MB/s
+#
+
+rule copy_to_scratch_fastq:
+  input:
+    "data/{collection}/fastq/{somefile}"
+  output:
+    temp(scratch + "data/{collection}/fastq/{somefile}")
+  shell:
+    """
+    mkdir -p {scratch}
+    ( flock 200; rsync -L -au -vh --bwlimit=150000 {input} {output} ) 200> {scratch}lock
+    """
+
+rule copy_from_scratch_bam:
+  input:
+    scratch + "data/{collection}/bam/{somefile}"
+  output:
+    "data/{collection}/bam/{somefile}"
+  shell:
+    """
+    ( flock 200; rsync -au -vh --bwlimit=150000 {input} {output} ) 200> {scratch}lock
+    """
+
+#
+#  Cleaunp
+#
+
+rule clean:
+  shell:
+    """
+    rm -rf data/balancer_cap2/qc data/balancer_cap2/bam data/balancer_cap2/chicago
+    """
