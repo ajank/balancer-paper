@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Session genome="dm6" hasGeneTrack="true" hasSequenceTrack="true" locus="chr3L:863855-963855" path="/Users/ajank/balancer_cap2/igv_sessions/igv_session_template.xml" version="8">
+    <Resources>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/assembly_dm6bal3.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/CAD4_plus_vienna_minus_inactive_corrected_names_dm6.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DEL.final.BAL.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DEL.final.VRG.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage10_merged_norm1X_bin_20bp.bigwig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage11_merged_norm1X_bin_20bp.bigwig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage9_merged_norm1X_bin_20bp.bigwig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DpnII_dm6_balancer_affected_RS.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DUP.final.BAL.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/DUP.final.VRG.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/Filion_2010_colors_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/final.predicted_MEI.bed"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/Insulator_CRMs.chip_seq.cell_lines.gff"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/MesoCRM_dm6_Nature_Zinzen2009.gff"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_All.fwd.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_All.rev.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_BAL.fwd.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_BAL.rev.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_VRG.fwd.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_VRG.rev.bigWig"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_All_HiCExplorer_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_BAL_HiCExplorer_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_VRG_HiCExplorer_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_Ramirez_2017_Kc167_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_Sexton_2012_embryo_16-18h_dm6.bed.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/annotations/viewpoints.gff"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_All.RPGC.bedGraph.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_BAL.RPGC.bedGraph.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_VRG.RPGC.bedGraph.gz"/>
+        <Resource path="/Users/ajank/balancer_cap2/igv_sessions/contacts_noARS_all/tracks/Glut1_differential.gff"/>
+    </Resources>
+    <Panel height="720" name="DataPanel" width="907">
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="228,26,28" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/viewpoints.gff" name="Capture-C viewpoints" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="153,153,153" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="60" id="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_All.RPGC.bedGraph.gz" name="Glut1 Capture-C (all reads)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="1000.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="77,175,74" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="60" id="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_VRG.RPGC.bedGraph.gz" name="Glut1 Capture-C (wild-type)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="750.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="60" id="/Users/ajank/balancer_cap2/igv_sessions/contacts_all/tracks/Glut1_BAL.RPGC.bedGraph.gz" name="Glut1 Capture-C (balancer)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="250.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/contacts_noARS_all/tracks/Glut1_differential.gff" name="Glut1 differential interactions" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="102,102,102" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="38" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage9_merged_norm1X_bin_20bp.bigwig" name="DNase-seq stage 9" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="20.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="102,102,102" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="38" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage10_merged_norm1X_bin_20bp.bigwig" name="DNase-seq stage 10" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="20.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="102,102,102" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="38" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_Stage11_merged_norm1X_bin_20bp.bigwig" name="DNase-seq stage 11" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="20.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="102,102,102" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DNase_HS_sites_stages9-11_HotSpot_peaks_FDR-1pc_liftedToDm6.bed" name="DNase-seq stages 9-11" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="152,78,163" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/CAD4_plus_vienna_minus_inactive_corrected_names_dm6.bed" name="Annotated CRMs (CAD4)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="152,78,163" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/MesoCRM_dm6_Nature_Zinzen2009.gff" name="Mesoderm CRMs (ChIP-chip)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="152,78,163" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/Insulator_CRMs.chip_seq.cell_lines.gff" name="Insulator CRMs (ChIP-seq)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="153,153,153" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_All.fwd.bigWig" name="RNA-seq + (all reads)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="400.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="153,153,153" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_All.rev.bigWig" name="RNA-seq − (all reads)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="0.0" minimum="400.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="77,175,74" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_VRG.fwd.bigWig" name="RNA-seq + (wild-type)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="300.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="77,175,74" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_VRG.rev.bigWig" name="RNA-seq − (wild-type)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="0.0" minimum="300.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_BAL.fwd.bigWig" name="RNA-seq + (balancer)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="100.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.DataSourceTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="21" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/RNA-seq_N1_6-8h_BAL.rev.bigWig" name="RNA-seq − (balancer)" normalize="false" renderer="BAR_CHART" sortable="true" visible="true" windowFunction="mean">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="0.0" minimum="100.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" colorScale="ContinuousColorScale;0.0;817.0;255,255,255;0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="dm6_genes" name="Gene models" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="817.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/final.predicted_MEI.bed" name="Differential MEI" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="77,175,74" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DEL.final.VRG.bed" name="Deletions (wild-type)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DEL.final.BAL.bed" name="Deletions (balancer)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="77,175,74" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DUP.final.VRG.bed" name="Duplications (wild-type/common)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="55,126,184" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DUP.final.BAL.bed" name="Duplications (balancer)" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="255,127,0" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/DpnII_dm6_balancer_affected_RS.bed" name="Allele-specific DpnII fragments" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="255,127,0" displayMode="COLLAPSED" featureVisibilityWindow="10000000" fontSize="12" height="20" id="DpnII" name="DpnII cut sites" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count">
+            <SequenceMatchSource featureWindowSize="10000000" genome="dm6" pattern="GATC" strand="POSITIVE"/>
+        </Track>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/assembly_dm6bal3.bed" name="Balancer assembly" renderer="BASIC_FEATURE" sortable="false" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_All_HiCExplorer_dm6.bed.gz" name="TADs (all reads)" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_VRG_HiCExplorer_dm6.bed.gz" name="TADs (wild-type)" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_HiC_DB_6-8h_BAL_HiCExplorer_dm6.bed.gz" name="TADs (balancer)" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_Ramirez_2017_Kc167_dm6.bed.gz" name="TADs (Ramirez et al. 2017)" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/TADs_Sexton_2012_embryo_16-18h_dm6.bed.gz" name="TADs (Sexton et al. 2012)" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+        <Track altColor="0,0,178" autoScale="false" clazz="org.broad.igv.track.FeatureTrack" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="12" height="20" id="/Users/ajank/balancer_cap2/igv_sessions/annotations/Filion_2010_colors_dm6.bed.gz" name="Chromatin colors" renderer="BASIC_FEATURE" sortable="true" visible="true" windowFunction="count"/>
+    </Panel>
+    <Panel height="40" name="FeaturePanel" width="907">
+        <Track altColor="0,0,178" autoScale="false" color="0,0,178" displayMode="COLLAPSED" featureVisibilityWindow="-1" fontSize="10" id="Reference sequence" name="Reference sequence" sortable="false" visible="true"/>
+    </Panel>
+    <PanelLayout dividerFractions="0.9249592169657422"/>
+    <HiddenAttributes>
+        <Attribute name="DATA FILE"/>
+        <Attribute name="DATA TYPE"/>
+        <Attribute name="NAME"/>
+    </HiddenAttributes>
+</Session>
