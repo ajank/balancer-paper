@@ -1,0 +1,545 @@
+# Filtering Deletions
+
+> Use `Rscript -e 'library(knitr); knit2html("newDELfilter.Rmd", quiet=T)'` to compile this on the EMBL server.
+
+First, in order to access information easier, let's reformat the VCF on the 
+command line:
+
+```{r, engine="bash"}
+svprops ../../../data/variants/SVs/PE.delly072.DEL.vcf.gz > PE.delly072.DEL.info
+zcat ../../../data/variants/SVs/PE.delly072.DEL.vcf.gz \
+    | awk -f ../vcfinfo.awk -W source '\
+    BEGIN{OFS="\t"; print "id","mapq", "pass"}
+    !/^#/ { print $3, INFO["MAPQ"], $7}' \
+    > PE.delly072.DEL.moreinfo
+less ../../../data/dm6_annotation/mappability/dm6_split_100.smooth201.bedGraph.gz \
+    | awk '$4==0' > uniqueAreas.bed
+```
+
+Reading all information into R
+
+```{r}
+x = read.table("PE.delly072.DEL.info", header=T, stringsAsFactors = F)
+y = read.table(gzfile("../../../data/variants/SVs/PE.delly072.DEL.vcf.gz"), stringsAsFactors = F)
+z = read.table("PE.delly072.DEL.moreinfo", header=T, stringsAsFactors = F)
+```
+
+Data gets reformatted in the background.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(stringr)
+library(knitr)
+library(reshape2)
+library(dplyr)
+library(GenomicRanges)
+library(rtracklayer)
+
+# merge SVprops output with awk output
+x = merge(x, z, by="id")
+
+# functions to count number of calls
+library(assertive)
+
+n_imprecise = function(d) {
+  assert_are_identical( subset(d, sample=="cross" & precise=="imprecise")$id, 
+                        subset(d, sample=="vrg"   & precise=="imprecise")$id)
+  dim(subset(d, sample=="cross" & precise=="imprecise"))[1]
+}
+n_precise = function(d) {
+  assert_are_identical( subset(d, sample=="cross" & precise=="precise")$id, 
+                        subset(d, sample=="vrg"   & precise=="precise")$id)
+  dim(subset(d, sample=="cross" & precise=="precise"))[1]
+}
+```
+
+```{r, echo=FALSE}
+# Sample information
+colsFORMAT = unlist(strsplit(y$V9[1], ":", fixed=T))
+cross = data.frame(id = y$V3, sample="cross", call=str_split_fixed(y$V10, stringr::fixed(":"),n=length(colsFORMAT)), stringsAsFactors = F)
+vrg   = data.frame(id = y$V3, sample="vrg", call=str_split_fixed(y$V11, stringr::fixed(":"),n=length(colsFORMAT)), stringsAsFactors = F)
+colnames(cross) = c("id", "sample", colsFORMAT)
+colnames(vrg)   = c("id", "sample", colsFORMAT)
+
+# create the combined genotype
+combinedGT = merge(cross[,c("id","GT")], vrg[,c("id","GT")], by="id")
+combinedGT$combinedGT = paste(combinedGT$GT.x, combinedGT$GT.y, sep=".")
+combinedGT = subset(combinedGT, select = c("id", "combinedGT"))
+
+# merge it to the main table
+x = merge(x, combinedGT, by="id")
+
+# merge the samples and x in long format
+d = rbind( merge(x,cross,by="id"), merge(x,vrg,by="id"))
+d$DR  = as.numeric(d$DR)
+d$DV  = as.numeric(d$DV) 
+d$RR  = as.numeric(d$RR) 
+d$RV  = as.numeric(d$RV)
+d$RC  = as.numeric(d$RC)
+d$RCL = as.numeric(d$RCL)
+d$RCR = as.numeric(d$RCR)
+d$precise = factor(d$precise, levels=c(0,1), labels=c("imprecise","precise"))
+```
+
+```{r, echo=FALSE}
+# definition of graphical parameters
+myTheme = theme_minimal() +
+  theme(text = element_text(size=16),
+        title = element_text(size=16),
+        axis.text = element_text(size=14),
+        legend.text = element_text(size=16),
+        strip.text = element_text(size=16))
+mySizeScale = scale_x_log10(breaks=c(50,160,1000,10000,100000,1000000), 
+                            labels=c("50b","160b","1kb","10kb","100kb","1Mb"))
+ggplot_hist = ggplot() + 
+  aes(x=end-start) + 
+  geom_histogram(binwidth=0.1, col="black", fill="grey") + 
+  mySizeScale + 
+  xlab("size") +
+  myTheme
+ggplot_hist2 = ggplot_hist + 
+  ggtitle("Size distribution") + 
+  facet_grid(precise ~ ., scales="free_y")
+ggplot_support_impr = ggplot() + 
+  aes(x=DR, y=DV, col=GT) + 
+  geom_point() + 
+  facet_grid(. ~ sample) + 
+  geom_abline(slope=1,intercept=0,col="darkred", linetype="dotted") +
+  myTheme
+ggplot_support_prec = ggplot() + 
+  aes(x=RR, y=RV, col=GT) + 
+  geom_point() + 
+  facet_grid(. ~ sample) + 
+  geom_abline(slope=1,intercept=0,col="darkred", linetype="dotted") + 
+  myTheme
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+## Filter by Delly's filter *PASS*
+
+```{r}
+d = subset(d, pass == "PASS")
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+
+## Filter by MAPQ >= 60
+
+```{r}
+d = subset(d, mapq >= 60)
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+## Filter by combined genotypes
+
+Let's look at how the combined genotypes in both samples are distributed.
+We expect only some of them to make sense. Here are the numbers for 
+
+```{r, echo=FALSE}
+x = table(d$combinedGT[d$sample=="cross"])
+x[x>0]
+```
+
+```{r}
+d = subset(d, combinedGT %in% c("0/1.0/0", "0/1.1/1", "1/1.1/1"))
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+## Filter by chromosomes
+
+We are only interested in certain chromosomes
+
+```{r, echo=FALSE}
+table(d$chr, d$combinedGT)
+```
+
+```{r}
+d = subset(d, chr %in% c("chr2L","chr2R","chr3L","chr3R","chrX"))
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+## Filter by read support
+
+First I would argue that an extremely high ref or alt support  means there is something 
+wrong, so I remove them:
+
+```{r}
+bad_ids = unique( subset(d, (precise == "precise" & (RR >= 500 | RV >= 500) )
+                          | (precise == "imprecise" & (DR >= 750 | DV >= 750) ))$id )
+d = subset(d, !(id %in% bad_ids))
+```
+
+Then I will require a **minimum support**. For precise calls, require at least 
+25 total reads in the cross and 15 total 
+reads in the virginizer. For imprecise, let's say 40 and 20.
+This cutoff is shown as a **dashed orange line** in the plots below.
+
+```{r}
+lines = data.frame(intercept = c(25,      40,      15,    20), 
+                   sample    = c("cross", "cross", "vrg", "vrg"), 
+                   precise   = c("precise","imprecise","precise","imprecise"),
+                   slope = rep(-1,4),
+                   stringsAsFactors = F)
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8}
+ggplot_support_impr %+% subset(d, precise=="imprecise") + 
+  facet_grid(combinedGT ~ sample) + 
+  ggtitle("Imprecise") + 
+  coord_cartesian(xlim=c(0,100), ylim=c(0,100)) + 
+  geom_abline(data = subset(lines, precise=="imprecise"), 
+              aes(intercept=intercept, slope=slope), 
+              col="orange", linetype="dashed") + 
+  myTheme
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8}
+ggplot_support_prec %+% subset(d, precise=="precise") + 
+  facet_grid(combinedGT ~ sample) + 
+  coord_cartesian(xlim=c(0,200), ylim=c(0,200)) + 
+  ggtitle("Precise")  + 
+  coord_cartesian(xlim=c(0,100), ylim=c(0,100))  + 
+  geom_abline(data=subset(lines, precise=="precise"), 
+              aes(intercept=intercept, slope=slope), 
+              col="orange", linetype="dashed") +
+  myTheme
+```
+
+```{r}
+ids = intersect( subset(d, precise=="precise"   & sample=="cross" & RR+RV >= 25 |
+                           precise=="imprecise" & sample=="cross" & DV+DR >= 40 )$id,
+                 subset(d, precise=="precise"   & sample=="vrg"   & RR+RV >= 15 |
+                           precise=="imprecise" & sample=="vrg"   & DV+DR >= 20  )$id)
+d = subset(d, id %in% ids)
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot_hist2 %+% subset(d, sample=="cross")
+```
+
+## Filter by read depth ratio
+
+Read depth can only be assessed for deletions of a minimum size. Let's choose 
+**160bp** for now.
+
+```{r}
+d$big = factor(d$size >= 160, levels=c(F,T), labels=c("small","big"))
+```
+
+```{r, echo=FALSE}
+table(d$big[d$sample=="cross"], d$precise[d$sample=="cross"])
+```
+
+Let's have a look at the ratio of read counts within the interval to the read 
+counts in left and right flanking intervals, i.e. `RC/(RCL+RCR)`. Note that I 
+zoom in to a range of 0-3 here.
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+ggplot(d) + aes(x=GT, y=RC/(RCL+RCR), fill=GT) + 
+  geom_violin(scale="width") + 
+  facet_grid(big ~ sample) + 
+  coord_flip(ylim=c(0,3)) + 
+  ggtitle("Read depth ratio inside to outside") + 
+  myTheme
+```
+
+
+### ~~Filtering by read depth signal~~
+
+It looks like for "large" deletions the signal is actually useful. We can apply a 
+filter to that. Let's take the 10% - 90% quantiles for example:
+
+```{r}
+RClim = subset(d,big=="big") %>% 
+        group_by(GT, sample) %>% 
+        summarise(y = median(RC/(RCL+RCR)), 
+                  ymax = quantile(RC/(RCL+RCR), 0.9), 
+                  ymin = quantile(RC/(RCL+RCR), 0.1) )
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=4, warning=FALSE}
+ggplot(subset(d, big=="big"), aes(x=GT, y=RC/(RCL+RCR), fill=GT)) + 
+  geom_violin(scale="width") + 
+  facet_grid(big ~ sample) + 
+  coord_flip(ylim=c(0,3)) + 
+  theme_bw() + 
+  ggtitle("Read depth ratio inside to outside") +
+  geom_crossbar(data = RClim, fill=NA, aes(x = GT, y = y, ymin = ymin, ymax = ymax)) +
+  myTheme
+```
+
+Of course in some regions we want to correct that, e.g. a minimum of 0 for the 1/1 cases.
+Here are the values that I propose:
+
+```{r, echo=FALSE}
+RClim$ymin[ with(RClim, GT=="1/1") ] = 0
+RClim$ymax[ with(RClim, GT=="1/1") ] = 0.4
+RClim$ymin[ with(RClim, GT=="0/0")] = 0.5
+RClim$ymax[ with(RClim, GT=="0/0")] = 1.5
+kable(RClim)
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=4}
+ggplot(subset(d, big=="big"), aes(x=GT, y=RC/(RCL+RCR), fill=GT)) + 
+  geom_violin(scale="width") + 
+  facet_grid(big ~ sample) + 
+  coord_flip(ylim=c(0,3)) + 
+  theme_bw() + 
+  ggtitle("Read depth ratio inside to outside") +
+  geom_crossbar(data = RClim, fill=NA, aes(x = GT, y = y, ymin = ymin, ymax = ymax)) + 
+  myTheme
+```
+
+Note that I **do not** apply the criterium now. Instead we'll filter differently 
+in the next step.
+
+```{r, echo=FALSE}
+#d =  full_join(d,RClim, by=c("GT","sample")) %>% 
+#     filter(!big | RC/(RCL+RCR) >= ymin & RC/(RCL+RCR) <= ymax) %>% 
+#     select(-c(y,ymin,ymax))
+```
+
+
+### Filter by read depth ratio *between samples*
+
+The only way read depth filters make sense is in a **comparison between samples**
+because the read depth signal is highly influenced by mappability and random
+fluctuations in coverage.
+
+```{r}
+d$RC_ratio = d$RC / (d$RCL + d$RCR)
+RDratios = dcast(subset(d, big=="big"), id + size + combinedGT + precise ~ sample, value.var="RC_ratio")
+```
+
+```{r, echo=FALSE}
+# Technical note: Casting multiple values at the same time can be done 
+# with the `data.table` library. See below
+#library(data.table)
+#setDT(d)
+#dcast.data.table( subset(d, big=="big" & combinedGT == "0/1.0/0"), id ~ sample, value.var = c("RC","RCR","RCL"))
+```
+
+Let's first look at the genotypes 0/1 0/0. Here we would expect 
+inside-to-outside read depth ratios of 50% in the cross and 100% 
+in the virginizer. But since this is not relevant due to mappability issues,
+we'll only look at the difference of these ratios and ~~require a minimum
+difference, i.e. that $r_{vrg} \geq r_{cross} + 0.2$~~.
+
+Actually, we expect random fluctuations on intervals to decrease with interval size. 
+This is why a **size-dependent** or *dynamic* cut-off makes much more sense.
+
+> I want to investigate this dependncy more in the future. This might be a useful filter for Delly
+
+```{r, echo=FALSE, fig.width=10, fig.height=5, warning=FALSE}
+dynThrF = function(x) { 1.25/x^0.2 }
+thr_col = c("Expected"="darkorange", "Fixed Threshold"="blue", "Dynamic Threshold"="darkseagreen")
+thr_line = c("Expected"="dashed", "Fixed Threshold"="dotted", "Dynamic Threshold"="dotted")
+dynThr = data.frame(x=10**seq(2,7.5,0.05), name="Dynamic Threshold")
+dynThr$y = dynThrF(dynThr$x) + 0.5
+dynThr$z = 1 - dynThr$y
+ggplot(subset(RDratios, combinedGT=="0/1.0/0")) + 
+  aes(x=size, y=vrg-cross) + 
+  geom_point() + 
+  mySizeScale + 
+  geom_hline(data=data.frame(y=c(0.5,0.2), name=c("Expected", "Fixed Threshold")), 
+             aes(yintercept=y, colour=name, linetype=name)) +
+  scale_colour_manual(name=NULL, values=thr_col)  +
+  scale_linetype_manual(name=NULL, values=thr_line)  +
+  coord_cartesian(ylim=c(-0.6,1.1)) + 
+  xlab("Deletion size") + 
+  ylab("ratio vrg - cross") + 
+  ggtitle("Read depth ratio difference for 0/1, 0/0 calls") + 
+  geom_line(data=dynThr, aes(x=x,y=y, linetype=name, col=name)) + 
+  geom_line(data=dynThr, aes(x=x,y=z, linetype=name, col=name)) +
+  myTheme
+```
+
+Next, for genotype 0/1 1/1 we would expect ratios of 50% and 0%, 
+respectively, so looking at the difference, ~~we again require a minimum
+distance, i.e $r_{vrg} \leq r_{cross} -0.2$~~. Also here we will use the dynamic 
+cut-off.
+
+```{r, echo=FALSE, fig.width=10, fig.height=5, warning=FALSE}
+dynThr$y = dynThrF(dynThr$x) - 0.5
+dynThr$z = -1 - dynThr$y
+ggplot(subset(RDratios, combinedGT=="0/1.1/1")) + 
+  aes(x=size, y=vrg-cross) + 
+  geom_point() + # geom_point(aes(size= id == "DEL00007712"))
+  mySizeScale +  
+  geom_hline(data=data.frame(y=c(-0.5,-0.2), name=c("Expected", "Fixed Threshold")), 
+             aes(yintercept=y, colour=name, linetype=name)) +
+  scale_colour_manual(name=NULL, values=thr_col)  +
+  scale_linetype_manual(name=NULL, values=thr_line)  +
+  coord_cartesian(ylim=c(-1.1,0.6)) + 
+  xlab("Deletion size") + 
+  ylab("ratio vrg - cross") + 
+  ggtitle("Read depth ratio difference for 0/1, 1/1 calls") + 
+  geom_line(data=dynThr, aes(x=x,y=y, linetype=name, col=name)) + 
+  geom_line(data=dynThr, aes(x=x,y=z, linetype=name, col=name)) +
+  myTheme
+```
+
+### Apply dynamic read depth filter
+
+I manually inspected the calls above 2 kb that get kicked out 
+by the read depth ratio filter and it looks very convincing.
+As a side note, we are going to put the **common deletions into 
+a separate file** as they don't allow a comparison between samples.
+
+```{r}
+good_IDs1 = subset(RDratios,  # Fixed Threshold
+      combinedGT=="0/1.0/0" & cross < vrg -0.2 |
+      combinedGT=="0/1.1/1" & vrg < cross -0.2)$id
+RDratios$dynThr = dynThrF(RDratios$size) # Arbitrary function that shrinks in a nice shape
+good_IDs2 = subset(RDratios, # Dynamic Threshold
+      combinedGT=="0/1.0/0" & vrg-cross < dynThr+0.5 & vrg-cross > 0.5-dynThr |
+      combinedGT=="0/1.1/1" & vrg-cross < dynThr-0.5 & vrg-cross > -0.5 -dynThr)$id
+d = subset(d, big=="small" | combinedGT == "1/1.1/1" | id %in% good_IDs2)
+```
+
+> Imprecise: **`r n_imprecise(d)`**, precise: **`r n_precise(d)`**
+
+```{r, echo=FALSE}
+table(d$big[d$sample=="cross"], d$precise[d$sample=="cross"])
+```
+
+## Stratify by mappability
+
+Especially the common deletions, but also sample-specific ones can be false 
+positives due to a low mappability region. This is why we would like to split
+the calls into a high-confidence, where at least **80%** of the deletion overlap
+unique regions in the genome, and a low-confidence set.
+
+```{r, warning=FALSE}
+# find overlaps between deletions and unique regions
+uniq = reads <- import.bed("uniqueAreas.bed")#, genome="dm6")
+dels = makeGRangesFromDataFrame(subset(d, sample=="cross", select=c("chr","start","end","id")),
+                                ignore.strand=T, keep.extra.columns=T)
+seqlevels(dels) = seqlevels(uniq)
+hits = findOverlaps(uniq, dels)
+hits = pintersect(dels[subjectHits(hits)], uniq[queryHits(hits)])
+
+# Select deletions covered to 50% by unique regions
+highConf = data.frame(id = hits$id, size = end(hits) - start(hits)+1) %>% 
+  group_by(id) %>% 
+  dplyr::summarize(total_size = sum(size), intervals = length(size)) %>% 
+  inner_join(subset(d, sample=="cross", select=c(id,size)), by="id") %>%
+  filter(total_size >= 0.5*size)
+d$confidence = factor(d$id %in% highConf$id, levels=c(T,F), labels=c("high","low"))
+```
+
+```{r, echo=FALSE}
+table(d$confidence[d$sample=="cross"], d$precise[d$sample=="cross"])
+table(d$confidence[d$sample=="cross"], d$big[d$sample=="cross"])
+table(d$confidence[d$sample=="cross"], d$combinedGT[d$sample=="cross"])
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=3}
+ggplot_hist %+% subset(d, sample=="cross" & confidence=="high") + 
+  ggtitle("Size: high confidence")
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=3}
+ggplot_hist %+% subset(d, sample=="cross" & confidence=="low") + 
+  ggtitle("Size: lower confidence")
+```
+
+## Summary
+
+```{r, fig.width=7, fig.height=4, echo=FALSE}
+d$newGT = factor(d$combinedGT == "1/1.1/1", levels=c(T,F), labels=c("common","heterozygous"))
+ggplot(d) + 
+  geom_bar(aes(x=newGT, fill=confidence), stat="count", position="stack") + 
+  facet_grid(. ~ big) + 
+  xlab(NULL) + ylab(NULL) + 
+  myTheme
+```
+
+```{r, echo=FALSE}
+table(d$chr, d$newGT)
+```
+
+
+## Write to files
+
+We will create 4 different sets from this, in order to validate them seperately:
+
+ 1. common + heterozygous, high confidence calls $< 50bp$. We cannot 
+    validate those by PCR
+ 2. common + heterozygous, high confidence calls $\geq 50bp$ and $< 160bp$.
+    Those will be validated by PCR
+ 3. heterozygous, high confidence calls $\geq 160bp$. We drop common calls as they
+    were not read-depth selected
+ 4. heterozygous, low confidence calls $\geq 160bp$.
+   
+```{r, echo=FALSE}
+d$finalSet = "discard"
+d[d$confidence=="high" & d$size<50, ]$finalSet = "below50.highConf"
+d[d$confidence=="high" & d$size >= 50 & d$size < 160, ]$finalSet = "50_160.highConf"
+d[d$confidence=="high" & d$size >= 160 & d$newGT=="heterozygous", ]$finalSet = "above160.highConf"
+d[d$confidence=="low" & d$size >= 160 & d$newGT=="heterozygous", ]$finalSet = "above160.lowConf"
+kable(data.frame(table(d$finalSet)/2))
+```
+
+```{r}
+for (x in unique(d$finalSet)) {
+  #if (x == "discard") next
+  write.table(unique(subset(d, finalSet == x)$id),
+              file=paste("DEL.",x,".ids.txt",sep=""),
+              quote=F, row.names=F, col.names=F)
+}
+```
+
+
+```{r, engine="bash"}
+VCF=../../../data/variants/SVs/PE.delly072.DEL.vcf.gz
+for x in DEL.*.ids.txt;
+  do
+  less $VCF | grep '^#' > ${x%.ids.txt}.vcf
+  less $VCF | grep -f $x >> ${x%.ids.txt}.vcf
+  done
+rm DEL.*.ids.txt PE.delly072.DEL.info PE.delly072.DEL.moreinfo uniqueAreas.bed
+```
+
+*****
+
+## Appendix: Custom plots for other purposes
+
+```{r, fig.width=7, fig.height=4}
+p1 = ggplot(subset(d,sample=="cross" & finalSet != "discard")) + aes(x=size, y=..count..) + geom_density() + scale_x_log10(breaks=c(20,50,160,1000,5000,10000,100000), labels=c("20b","50b","160b","1kb","5kb","10kb","100kb")) + theme_classic() + xlab("Deletion size") + ylab("Count") + geom_vline(xintercept=c(50,160), col="darkorange", linetype="dashed")
+p1
+ggsave("DEL.size.density.pdf", p1, width=5, height=3)
+```
+
+```{r}
+#p2 = ggplot(subset(d,sample=="cross")) + aes(x="DEL",y=size) + geom_violin(scale="width", fill="black") + scale_y_log10(breaks=c(10,100,1000,10000,100000,1000000), labels=c("10b","100b","1kb","10kb","100kb","1Mb")) + theme_classic() + xlab("Deletion size") + ylab("Count") + coord_flip()
+#p2
+#ggsave("plots/del.size.violin.pdf", p2, width=5, height=3)
+```

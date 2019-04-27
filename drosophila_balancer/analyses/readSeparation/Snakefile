@@ -1,0 +1,89 @@
+DIR = "/g/korbel/shared/projects/drosophila_balancer/data/mapping/rna/bam"
+scratch = "/scratch/meiers/readSeparation"
+BAM, = glob_wildcards(DIR + "/{i}.sort.rg.bam")
+
+
+
+# Load modules when on the cluster:
+import socket
+if "cluster" in socket.gethostname():
+    print ("Code is run on the cluster. Loading modules...")
+    shell.prefix("module load Python/2.7.12-foss-2016b HTSeq SAMtools R-bundle-Bioconductor/3.3-foss-2016b-R-3.3.1; ")
+
+
+localrules: all, move, clean
+
+rule all:
+    input:      expand("plots/{i}.htseq-count-rev.ratios.pdf", i = BAM),
+                expand("rna/{i}/numbers.txt", i = BAM)
+
+rule htseq_count:
+    input:     bam = "rna/{i}/namesort.{j}.sort.bam",
+               bai = "rna/{i}/namesort.{j}.sort.bam.bai"
+    output:    "counts/{i}.htseq-count-rev.{j}.txt"
+    shell:     """
+               gff=/g/korbel/shared/projects/drosophila_balancer/data/dm6_annotation/dmel-all-filtered-r6.05.UCSC_names.genes.gff3
+               htseq-count -r pos -s reverse -f bam {input.bam} $gff > {output}
+               """
+rule plot:
+    input:     bal = "counts/{x}.htseq-count-rev.alt.txt",
+               vrg = "counts/{x}.htseq-count-rev.ref.txt"
+    output:    "plots/{x}.htseq-count-rev.ratios.pdf"
+    script:    "scripts/plot_density.R"
+
+rule move:
+    input:      expand(scratch + "/{{i}}/namesort.{allele}.sort.bam", \
+                       allele = ['alt','ref'])
+    output:     expand("rna/{{i}}/namesort.{allele}.sort.bam", \
+                       allele = ['alt','ref'])
+    shell:      "cp " + scratch + "/{wildcards.i}/namesort.*.sort.bam rna/{wildcards.i}/"
+
+rule separate:
+    input:      scratch + "/{i}/namesort.bam"
+    output:     expand(scratch + "/{{i}}/namesort.{allele}.bam", \
+                       allele = ['alt','ref','amb','err'])
+    shell:      "python scripts/separator.2.py -v getVCF/variants.new.vcf.gz -b {input} -o {input}"
+
+rule name_sort:
+    input:      DIR + "/{i}.sort.rg.bam"
+    output:     scratch + "/{i}/namesort.bam"
+    threads:    4
+    shell:      "samtools sort -@ {threads} -n -o {output} -O BAM {input}"
+
+rule count_separated:
+    input:
+        alt =   scratch + "/{sample}/namesort.alt.bam",
+        ref =   scratch + "/{sample}/namesort.ref.bam",
+        total = scratch + "/{sample}/namesort.bam",
+        amb =   scratch + "/{sample}/namesort.amb.bam",
+        err =   scratch + "/{sample}/namesort.err.bam"
+    output:     "rna/{sample}/numbers.txt"
+    shell:      """
+                module load SAMtools
+                tot=$(samtools view -c -F2052 -f 64 {input.total})
+                alt=$(samtools view -c -F2052 -f 64 {input.alt})
+                ref=$(samtools view -c -F2052 -f 64 {input.ref})
+				amb=$(samtools view -c -F2052 -f 64 {input.amb})
+                err=$(samtools view -c -F2052 -f 64 {input.err})
+                echo -e "total read pairs\t$tot"      > {output}
+                echo -e "wild type read pairs\t$ref" >> {output}
+                echo -e "balancer read pairs\t$alt"  >> {output}
+                echo -e "ambiguous read pairs\t$amb" >> {output}
+                echo -e "errorneous read pairs\t$err" >> {output}
+                """
+
+# sort should be performed on scratch, index on /g/korbel
+
+rule sort:
+    input:      scratch + "/{sample}/namesort.{allele}.bam"
+    output:     scratch + "/{sample}/namesort.{allele}.sort.bam"
+    threads:    4
+    shell:      "samtools sort -@ {threads} -o {output} -O BAM {input}"
+
+rule index:
+    input:      "rna/{sample}/namesort.{allele}.sort.bam"
+    output:     "rna/{sample}/namesort.{allele}.sort.bam.bai"
+    shell:      "samtools index {input}"
+
+rule clean:
+    shell:      "rm rna/*/namesort.bam*  rna/*/namesort.{{ref,alt,amb,err}}.bam*"

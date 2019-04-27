@@ -1,0 +1,4 @@
+chr2L	8957000	9215000	0/1_0/0_DUP	Confirmed with bi-allelic frequency. Not in tandem
+chr3R	22641200	22645500	0/1_0/0_DUP	Confirmed with bi-allelic frequency. Not in tandem
+chr3R	15130850	15141300	0/1_0/0_DUP	bal-spec; Confirmed with bi-allelic freq
+

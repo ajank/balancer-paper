@@ -1,0 +1,258 @@
+---
+title: "Annotating SNVs"
+author: "Sascha Meiers"
+date: "30 March 2016"
+output: html_document
+---
+
+> Compile with `Rscript -e 'library(knitr); rmarkdown::render("annotateSNPs.Rmd", clean=F)'`
+
+```{r, echo=FALSE, warning=F, message=F}
+library(tidyr)
+library(dplyr)
+library(GenomicRanges)
+library(rtracklayer)
+library(ggplot2)
+library(data.table)
+library(ggbio)
+library(AnnotationDbi)
+```
+
+Input files:
+
+```{r}
+dir = "/g/korbel/shared/projects/drosophila_balancer"
+GFF_file = "/g/furlong/genome/D.melanogaster/Dm6/6.05/gff/dmel-all-filtered-r6.05.UCSC_names.genes.gff.gz"
+snv_name = "data/variants/SNVs2/wgs.freebayes-k.filter.norm.SNVonly.vcf.gz"
+mapp_name = "data/dm6_annotation/mappability/dm6_split_90.exact.bedGraph.gz"
+```
+
+
+## Flattening the  GFF file
+
+Before calculating overlaps of SNVs with genes I want to flatten the GFF by removing overlapping features
+and kicking out some unimportant ones. This will basically partition the gff into 
+non-overlapping intervals and choose the most specific (e.g. CDS instead of exon) definition when multiple
+features overlap. Note that there can still be two overlapping genes. And we throw 
+out transcript information in this step.
+
+Selecting columns of the GFF file
+```{r}
+select_feature <- function(feats) {   
+    if      ("CDS" %in% feats)             "CDS"
+    else if ("five_prime_UTR" %in% feats)  "five_prime_UTR"
+    else if ("three_prime_UTR" %in% feats) "three_prime_UTR"
+    else if ("exon" %in% feats)            "exon"
+    else if ("intron" %in% feats)          "intron"
+    else "other"
+}
+
+if (!file.exists("reformatted.gff")) 
+{
+    gff = fread(paste("zcat", GFF_file))
+    gff <- gff[grepl("^chr[234X][LR]?$", V1),]
+    assert_that( all(gff == gff[grepl('gene_id=', V9),]))  # Make sure all entries have a gene_id tag
+    
+    # get columns with gene_id and parent
+    gff$gene_id = sub('^.*gene_id=(FBgn[0-9]+)(;.*)?$','\\1',gff$V9)
+    gff$parent  = sub('^.*Parent=([A-Za-z0-9_,]+)(;.*)?$','\\1',gff$V9)
+    gff[!grepl('Parent=',V9),]$parent = ""
+    gff <- gff[, .(chrom = V1, start = V4, end = V5, strand = V7, feature = V3, gene_id, parent)]
+    
+    # Filter certain features
+    gff <- gff[!(feature %in% c("insertion_site","breakpoint","point_mutation",
+                              "sequence_variant","DNA_motif","complex_substitution",
+                              "polyA_site", "rescue_fragment")),]
+    
+    # Make a GRanges and overlap with itself
+    GFF <- makeGRangesFromDataFrame(gff)
+    mcols(GFF) = gff[, .(feature, gene_id, parent)]
+    
+    # split intervals into disjoint objects:
+    disjoint_intervals = disjoin(GFF)
+    ovlps <- as.data.table(findOverlaps(disjoint_intervals,GFF))
+    
+    gff <- ovlps[, cbind(as.data.table(disjoint_intervals)[queryHits, 
+                                  .(intv_chrom = seqnames, intv_start = start, intv_end = end, intv_strand = strand)],
+                         gff[subjectHits]) ]
+    
+    # Select "best" feature if multiple overlap
+    gff <- gff[, 
+        .(feature = select_feature(feature)), 
+        by = .(chrom = intv_chrom, start = intv_start, end = intv_end, strand = intv_strand, gene_id)]
+    
+    write.table(gff, col.names = T, row.names = F, sep = "\t", quote=F, file = "reformatted.gff")
+} else {
+    message("Reading reformatted GFF from file")
+    gff <- read.table("reformatted.gff", header = T)
+}
+```
+
+
+### Example region of the flattened GFF file:
+
+```{r, width=9, height=8, dev=c('png','pdf'), message=F, warning=F, echo=F}
+
+dd = loadDb("../common/data/dmelanogaster_gene_ensembl.txdb")
+seqlevels(dd) = paste("chr", seqlevels(dd), sep="")
+region = data.frame(chrom = "chr3R", start=27065000, end=27068000)
+gregion  <- GRanges(region$chrom, IRanges(region$start, region$end))
+pg1 <- ggplot(filter(gff, chrom == as.character(region$chrom), 
+                     end >= region$start, start <= region$end)) + 
+    aes(x=start, radius = end-start, col=feature, y=gene_id) + 
+    geom_spoke(size=4,angle=0) + theme_minimal() + coord_cartesian(xlim=c(start(gregion), end(gregion)))
+a <- tracks(`Gene Model` = autoplot(dd, which = gregion, aes(fill=gene_id) + theme_minimal()), 
+            `GFF file` = pg1)
+xlim(a) = c(start(gregion), end(gregion))
+a
+```
+
+```{r}
+gff <- makeGRangesFromDataFrame(gff, keep.extra.columns = T)
+```
+
+## Annotate SNVs with genes:
+
+Read in the SNV vcf
+
+```{r}
+snvs <- read.table(gzfile(paste(dir, snv_name ,sep="/")))
+snvs <- snvs %>% 
+        filter(!grepl(".:.:.",V10,fixed=T) & !grepl(".:.:.",V11,fixed=T)) %>%
+        separate(V10, paste("cross",c("GT","DP","RO","QR","AO","QA","GL"),sep="."), sep=":", convert=T) %>% 
+        separate(V11, paste("vrg",c("GT","DP","RO","QR","AO","QA","GL"),sep="."), sep=":", convert=T) %>%
+        dplyr::select(-c(V3, V6, V7, V9, V8, vrg.DP, vrg.GL, cross.DP, cross.GL)) %>%
+        dplyr::rename(chrom = V1, pos = V2, ref = V4, alt = V5)
+snvsGR = GRanges(Rle(snvs$chrom), ranges=IRanges(snvs$pos, snvs$pos))
+```
+
+Then we can overlap it with genes and summarize the genic features that overlay a SNP.
+
+```{r}
+# Overlaps: snvs = query, gff = subject
+anno <- as.data.frame(findOverlaps(snvsGR, gff)) %>% 
+        mutate(gene_region = paste(as.factor(seqnames(gff))[subjectHits], ":",
+                                   start(gff)[subjectHits], "-",
+                                   end(gff)[subjectHits], ":",
+                                   factor(as.vector(strand(gff)), levels=c("+","-"),
+                                          labels=c("plus", "minus"))[subjectHits],
+                                   sep=""),
+               gene_id = gff$gene_id[subjectHits],
+               gene_feature = gff$feature[subjectHits]) %>%          
+        group_by(queryHits) %>%
+        summarize(num_genes    = length(gene_id),
+                  gene_id      = paste(gene_id, collapse = ","), 
+                  gene_feature = paste(gene_feature, collapse = ","),
+                  gene_region  = paste(gene_region, collapse = ","))
+head(anno)
+```
+
+At last, add this information to the original SNV table:
+
+```{r}
+snvs$gene_id = snvs$gene_feature = snvs$gene_region = NA
+snvs$num_genes = 0
+snvs$num_genes[anno$queryHits]    = anno$num_genes
+snvs$gene_id[anno$queryHits]      = anno$gene_id
+snvs$gene_feature[anno$queryHits] = anno$gene_feature
+snvs$gene_region[anno$queryHits]  = anno$gene_region
+rm(anno, gff) # hopefully releases memory
+```
+
+How many genes does a SNP overlap?
+
+```{r, fig.width=4, fig.height=3, echo=F}
+ggplot(snvs, aes(num_genes)) + geom_histogram(binwidth=1, col="black") + theme_bw()
+```
+
+For SNVs overlapping a single gene, which feature do they overlap?
+
+```{r, fig.width=6, fig.height=3, echo=F}
+ggplot(snvs %>% filter(num_genes==1)) + 
+  aes(gene_feature, fill=gene_feature) + 
+  geom_bar() + theme_bw() + 
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) + 
+  ggtitle("All SNVs assigned to 1 gene")
+```
+
+How many SNPs per gene?
+
+```{r, fig.width=5, fig.height=3, echo=F, dev=c('png','pdf')}
+snvs %>% filter(num_genes==1, cross.GT=="0/1", gene_feature != "intron") %>% 
+    group_by(gene_id, gene_feature) %>% 
+    summarize(n=length(gene_id)) %>%
+  ggplot() + 
+    aes(n) + 
+    geom_histogram(binwidth=1) + 
+    coord_cartesian(xlim=c(0,50)) + 
+    ggtitle("Number of SNVs per gene (exonic only)") + 
+    theme_minimal() +
+    xlab("# SNVs")
+```
+
+## Annotate SNVs with mappability value
+
+We next want to annotate SNVs with their mappability score. This is easier
+because the bedGRaph covers every position exactly once.
+
+```{r}
+mapp <- import.bedGraph(paste(dir, mapp_name, sep="/"))
+ovlps = findOverlaps(snvsGR, mapp)
+snvs$mapp[queryHits(ovlps)] = as.numeric(score(mapp))[subjectHits(ovlps)]/180
+rm(mapp)
+```
+
+## Annotate maternally expressed genes
+
+### Maternal/zygotic expression annotation from the Eisen lab
+
+```{r}
+mat = read.table(paste(dir,  "analyses/maternalGenes/data/matzyg.txt", sep="/"))
+snvs$mat_eisen = "?"
+for (ix in 1:(dim(mat)[1]))
+{
+  state = as.character(mat$V2[ix])
+  gene  = as.character(mat$V1[ix])
+  if (is.na(state))
+  	next
+  indices = grep(gene, snvs$gene_id, fixed=T)
+  if (length(indices)>0)
+    snvs$mat_eisen[indices] = state
+}
+snvs$mat_eisen = factor(snvs$mat_eisen)
+```
+
+```{r, echo=F, fig.width=5, fig.height=3}
+ggplot(snvs) + aes(mat_eisen) + geom_bar() + theme_bw() + ggtitle("Annotation from Eisen lab")
+```
+
+### Maternal expression from David
+
+```{r}
+dav_mat    = read.table(paste(dir,  "analyses/maternalGenes/data/maternalGenes.txt", sep="/"))
+dav_nonmat = read.table(paste(dir,  "analyses/maternalGenes/data/conservative_nonMaternal.txt", sep="/"))
+mat = rbind(data.frame(V1=dav_mat$V1, V2="mat"), data.frame(V1=dav_nonmat$V1, V2="non-mat"))
+snvs$mat_david = "?"
+for (ix in 1:(dim(mat)[1]))
+{
+  state = as.character(mat$V2[ix])
+  gene  = as.character(mat$V1[ix])
+  if (is.na(state))
+  	next
+  indices = grep(gene, snvs$gene_id, fixed=T)
+  if (length(indices)>0)
+    snvs$mat_david[indices] = state
+}
+snvs$mat_david = factor(snvs$mat_david)
+```
+
+```{r, echo=F, fig.width=5, fig.height=3}
+ggplot(snvs) + aes(mat_david) + geom_bar() + theme_bw() + ggtitle("Annotation from David")
+```
+
+## Write down table
+
+```{r}
+head(snvs)
+write.table(snvs, file = "SNVs.txt", quote = F, sep = "\t", row.names = F)
+```

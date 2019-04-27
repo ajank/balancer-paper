@@ -1,0 +1,132 @@
+
+vcf  =  "../delly0.7.5.INV.filter1.bcf"
+bam1 = "/g/korbel/shared/projects/drosophila_balancer/data/mapping/rna/bam/N1_pool_6-8h_rep1.sort.rg.bam"
+bam2 = "/g/korbel/shared/projects/drosophila_balancer/data/mapping/rna/bam/N1_pool_6-8h_rep2.sort.rg.bam"
+vcfinfo = "../../vcfinfo.awk"
+
+rule all:
+    input:
+        "summary.txt"
+
+rule get_INV_bed:
+    output:
+        "inv.bed"
+    input:
+        vcf
+    shell:
+        """
+        bcftools view {input} \
+            | awk -f {vcfinfo} -W source '!/^#/ {{ OFS="\t";
+                 if (INFO["END"] - $2 >= 1000) {{
+                 print $1,$2, INFO["END"],$3,substr($10,1,3) "_" substr($11,1,3)
+                 }} }}' \
+            | tee {output}
+        """
+
+rule larger_region:
+    output:
+        temp("inv.larger.bed")
+    input:
+        "inv.bed"
+    shell:
+        """
+        awk '{{OFS="\t"; print $1, $2-2000, $3+2000, $4, $5}}' {input} > {output}
+        """
+
+rule left_region:
+    output:
+        temp("inv.left.bed")
+    input:
+        "inv.bed"
+    shell:
+        """
+        awk '{{OFS="\t"; print $1, $2-2100, $2-100,  $4, $5}}' {input} \
+            > {output}
+        """
+
+rule right_region:
+    output:
+        temp("inv.right.bed")
+    input:
+        "inv.bed"
+    shell:
+        """
+        awk '{{OFS="\t"; print $1, $2+100, $2+2100,  $4, $5}}' {input} \
+            > {output}
+        """
+
+rule inner_region:
+    output:
+        temp("inv.inner.bed")
+    input:
+        "inv.bed"
+    shell:
+        """
+        awk '{{OFS="\t"; print $1, $2+100, $3-100, $4, $5}}' {input} > {output}
+        """
+
+rule get_reads:
+    output:
+        temp("reads.{rep}.bam")
+    input:
+        bam = "/g/korbel/shared/projects/drosophila_balancer/data/mapping/rna/bam/N1_pool_6-8h_{rep}.sort.rg.bam",
+        bed = "inv.larger.bed"
+    shell:
+        "samtools view -F 3844 -bL {input.bed} {input.bam} > {output}"
+
+rule merge_reads:
+    output:
+        temp("reads.bam")
+    input:
+        "reads.rep1.bam", "reads.rep2.bam"
+    threads:
+        4
+    shell:
+        "samtools merge -@ {threads} {output} {input}"
+
+rule convert2bed:
+    input:
+        "reads.bam"
+    output:
+        "reads.bed"
+    shell:
+        """
+        bedtools bamtobed -i {input} | awk '{{OFS="\t"; print}}' > {output}
+        """
+
+rule convert to strand_info:
+    input:
+        "reads.bed"
+    output:
+        temp("reads.strand.bed")
+    shell:
+        """
+         awk '$5==255 {{OFS="\t"; if ($4~/1$/) {{ strand=$6 }}
+                                  else         {{ if($6=="+") {{strand="-"}}
+                                                  else        {{strand="+"}}
+                                               }}
+                        print $1,$2,$3, strand}}' \
+        {input} > {output}
+         """
+
+rule get_counts:
+    input:
+        counts = "reads.strand.bed",
+        bed    = "inv.{region}.bed"
+    output:
+        "counts.{region}.bed"
+    shell:
+        """
+        bedtools intersect -a {input.bed} -b {input.counts} -wb > {output}
+        """
+
+rule summarize:
+    input:
+        inv   = "inv.bed",
+        inner = "counts.inner.bed",
+        left  = "counts.left.bed",
+        right = "counts.right.bed"
+    output:
+        "summary.txt"
+    script:
+        "summarize.R"
