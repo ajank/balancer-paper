@@ -11,7 +11,6 @@ ALLELES = "All VRG BAL".split()
 genome = "dm6"
 genome_other = "dm6bal3"
 chromosomes = "chr2L chr2R chr3L chr3R chr4 chrX chrY"
-chromosomes_alt = "chr2L chr2LHet chr2R chr2RHet chr3L chr3LHet chr3R chr3RHet chr4 chrX chrXHet chrYHet"
 bwa = "/g/furlong/jankowsk/bwa/bwa"
 fasta_genome = "/g/furlong/genome/D.melanogaster/Dm6/fasta/dm6.UCSC.noMask.fa"
 snpfile = "/g/korbel/shared/projects/drosophila_balancer/analyses/readSeparation/getVCF/variants.new.vcf.gz"
