@@ -18,7 +18,7 @@ scratch = "scratch" + "/"
 import glob
 
 localrules:
-  copy_to_scratch_fastq, copy_from_scratch_bam, do_create_zipfile_balancer_cap2, dclean
+  copy_to_scratch_fastq, copy_from_scratch_bam, do_create_zipfile_balancer_cap2, clean
 
 #
 #  Default targets
@@ -123,16 +123,6 @@ rule do_bwa_mem:
     """
     {bwa} mem -E50 -L0 -5 -t {threads} {fasta_genome} {input} | samtools view -bT {fasta_genome} - > {output}
     """
-
-    # if [[ "$collection" == "precap" || "$collection" == "precap2" ]]; then
-    #   # short "precap" reads mapped using bwa aln
-    #   sai="$2.sai"
-    #   $bwa aln -t $threads $genome $1 > $sai.part && mv $sai.part $sai
-    #   bwa samse $genome $sai $1 | samtools view -bT $genome - > $2.part && mv $2.part $2
-    #   rm $sai
-    # else
-    #   # cap1 and cap2 mapped using bwa mem
-    # fi
 
 rule do_samtools_namesort:
   input:
